@@ -39,6 +39,8 @@ if [ ! -f "$1" ]; then
 	exit
 fi
 
+lsblk --list --scsi --noheadings --output NAME,TYPE,TRAN
+
 if [ -f $MNTDIR ] || [ -d $MNTDIR ]; then
 	echo "$MNTDIR already exists"
 	exit
@@ -77,6 +79,9 @@ sudo df
 
 touch $MNTDIR/ssh
 cat > $WPAFILE <<WPA
+country=US
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
 network={
 	ssid="$WPASSID"
 	psk= "$WPAPSK"
