@@ -58,7 +58,7 @@ if [ ! -e /sys/block/$disk ]; then
 fi
 
 # Ensure it's not already mounted
-if [ `grep -c $dev /proc/mounts` -gt 0 ]; then
+if [ `grep --count $dev /proc/mounts` -gt 0 ]; then
     echo "$dev is already mounted"
     exit 1
 fi
@@ -103,10 +103,10 @@ sudo dd if=$1 status=progress of=$dev bs=1M
 
 echo "configuring wifi and ssh..."
 if [ ! -d $MNTDIR ]; then
-	mkdir $MNTDIR
+	mkdir --verbose $MNTDIR
 fi
 
-sudo mount -t vfat ${dev}1 $MNTDIR -o rw,umask=0000
+sudo mount --verbose --types vfat ${dev}1 $MNTDIR --options rw,umask=0000
 
 sudo df
 
@@ -126,7 +126,7 @@ network={
 WPA
 
 # copy over config files
-mkdir $MNTDIR/tools
+mkdir --verbose $MNTDIR/tools
 cp README.md config.sh $MNTDIR/tools
 
 ls -l $MNTDIR
@@ -134,6 +134,6 @@ cat $WPAFILE
 
 sudo umount $MNTDIR
 
-rm -rf $MNTDIR
+rm --recursive --force --verbose $MNTDIR
 
 echo "done"

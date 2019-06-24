@@ -2,6 +2,9 @@
 #
 # last delta : $LastChangedDate$
 # rev        : $Rev$
+#
+# config the system.  This file is meant to be copied to the target system (maybe
+# via the boot partition) to run on first boot
 
 # Get the date info
 day=`date +%A`
@@ -35,19 +38,19 @@ echo
 echo
 echo "package install update and install ..."
 
-sudo apt-get -y update
-sudo apt-get -y upgrade
+sudo apt-get --yes update
+sudo apt-get --yes upgrade
 
-sudo apt-get -y install lirc
-sudo apt-get -y install git
-sudo apt-get -y install subversion
+sudo apt-get --yes install lirc
+sudo apt-get --yes install git
+sudo apt-get --yes install subversion
 
 echo
 echo "update /boot/config.txt ..."
 
 grep --quiet "gpu_mem=16" /boot/config.txt
 if [ "$?" -ne "0" ]; then
-	cat <<-EOF | sudo tee -a /boot/config.txt
+	cat <<-EOF | sudo tee --append /boot/config.txt
 
 		# IR Remote Settings
 		gpu_mem=16
@@ -62,7 +65,7 @@ echo "update /etc/modules ..."
 
 grep --quiet "lirc_dev" /etc/modules
 if [ "$?" -ne "0" ]; then
-	cat <<-EOF | sudo tee -a /etc/modules
+	cat <<-EOF | sudo tee --append /etc/modules
 		lirc_dev
 		lirc_rpi gpio_in_pin=23 gpio_out_pin=22
 	EOF
