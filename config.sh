@@ -50,6 +50,7 @@ echo "update /boot/config.txt ..."
 
 grep --quiet "gpu_mem=16" /boot/config.txt
 if [ "$?" -ne "0" ]; then
+	sudo cp -f /boot/config.txt /boot/config.txt.orig
 	cat <<-EOF | sudo tee --append /boot/config.txt
 
 		# IR Remote Settings
@@ -65,12 +66,54 @@ echo "update /etc/modules ..."
 
 grep --quiet "lirc_dev" /etc/modules
 if [ "$?" -ne "0" ]; then
+	sudo cp -f /etc.modules /etc/modules.orig
 	cat <<-EOF | sudo tee --append /etc/modules
+	
+		# IR Remote Settings
 		lirc_dev
 		lirc_rpi gpio_in_pin=23 gpio_out_pin=22
 	EOF
 else
 	echo "/etc/modules already configured"
+fi
+
+echo
+echo "update /etc/lirc/hardware.conf ..."
+
+grep --quiet "--listen" /etc/lirc/hardware.conf
+if [ "$?" -ne "0" ]; then
+	sudo cp -f /etc.modules /etc/lirc/hardware.conf
+	
+	cat <<-EOF | sudo tee -a /etc/lirc/hardware.conf
+		# /etc/lirc/hardware.conf
+		#
+		# Arguments which will be used when launching lircd
+		# todo: look up the meaning of --listen and document here
+		#LIRCD_ARGS="--uinput"
+		LIRCD_ARGS="--listen"
+		
+		# Don't start lircmd even if there seems to be a good config file
+		# START_LIRCMD=false
+		
+		# Don't start irexec, even if a good config file seems to exist.
+		# START_IREXEC=false
+		
+		# Try to load appropriate kernel modules
+		LOAD_MODULES=true
+		
+		# Run "lircd --driver=help" for a list of supported drivers.
+		# todo: what does this option do?
+		DRIVER="default"
+		# usually /dev/lirc0 is the correct setting for systems using udev
+		DEVICE="/dev/lirc0"
+		MODULES="lirc_rpi"
+		
+		# Default configuration files for your hardware if any
+		LIRCD_CONF=""
+		LIRCMD_CONF=""
+	EOF
+else
+	echo "/etc/lirc/hardware.conf already configured"
 fi
 
 echo
