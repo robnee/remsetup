@@ -229,7 +229,7 @@ Unmount or eject the SD card.
 
 ## First Boot
 	
-
+ssh pi@raspberrypi
 
 
 
