@@ -37,7 +37,7 @@ Boot
 
 ### /etc/hostname file:
 
-Add host name. todo: what does raspi-config do here?
+Add host name. todo: what does raspi-config do when changing locale?
 
 ### Append /boot/config.txt
 
@@ -287,3 +287,4 @@ Following are the changes that I made to make it work.
 
 [1] https://www.amazon.com/Infrared-Shield-for-Raspberry-Pi/dp/B00K2IICKK/ref=pd_sbs_328_1?_encoding=UTF8&psc=1&refRID=1QPY33VFCGETBJ17K8QE
 [2] http://learn.linksprite.com/raspberry-pi/shield/infrared-transceiver-on-raspberry-pi-lirc-software-installation-and-configuration/
+[3] https://www.hackster.io/nathansouthgate/control-rpi-from-alexa-b558ad
