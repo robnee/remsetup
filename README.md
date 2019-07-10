@@ -243,7 +243,11 @@ Unmount or eject the SD card.
 
 
 ## First Boot
-	
+
+### Scan for hosts
+
+	nmap -sP 192.168.1.* | grep scan
+
 ssh pi@raspberrypi
 
 Run /boot/tools/config.sh
@@ -285,6 +289,90 @@ Following are the changes that I made to make it work.
 
 	$ sudo /etc/init.d/lircd stop
 	$ sudo /etc/init.d/lircd start
+
+
+## Notes on Lirc 0.10.1
+
+Previous Raspbian distros included an earilier version of Lirc
+
+Here is how I got it to work. First of all: I use the latest Raspbian Stretch Lite 2018-03-13. With this version there is no /etc/lirc/hardware.conf anymore if you install lirc. You should also use up to date versions.
+
+In /boot/config.txt enable overlay lirc-rpi. GPIO 17 out and GPIO 18 in are default and you can omit their settings. I have added them if you use other pins. You can find the settings in /boot/overlays/README.
+
+	# Uncomment this to enable the lirc-rpi module
+	dtoverlay=lirc-rpi,gpio_out_pin=17,gpio_in_pin=18,gpio_in_pull=up
+
+Install lirc:
+
+	rpi3 ~$ sudo apt update
+	rpi3 ~$ sudo apt install lirc
+
+Edit /etc/lirc/lirc_options.conf and change this settings to:
+
+	driver = default
+	device = /dev/lirc0
+
+Now
+
+	rpi3 ~$ sudo systemctl reboot
+
+After login you should have a lirc0 device and see something like:
+
+	rpi3 ~$ ls -l /dev/lirc0
+	crw-rw---- 1 root video 244, 0 2018-01-28 16:58 /dev/lirc0
+	rpi3 ~$ lsmod | grep lirc
+	lirc_rpi                9032  3
+	lirc_dev               10583  1 lirc_rpi
+	rc_core                24377  1 lirc_dev
+
+Check services with:
+
+	rpi3 ~$ systemctl status lircd.service
+	rpi3 ~$ systemctl status lircd.socket
+
+Now you can test if you get signals. Start mode2 and push some buttons on your remote control. mode2 should show you very low level info in space and pulse:
+
+	rpi3 ~$ sudo systemctl stop lircd.service
+	rpi3 ~$ sudo systemctl stop lircd socket
+	rpi3 ~$ sudo mode2 --driver default --device /dev/lirc0
+
+If everything is OK to this, we can start lirc again:
+
+	rpi3 ~$ sudo systemctl start lircd socket
+	rpi3 ~$ sudo systemctl start lircd.service
+
+Now we need a configuration file that maps the lirc pulses to the buttons of your remote control. On the internet there is a database with many config files for remote controls. the config file for my remote control I have found there. If you cannot find yours you have to training your remote control by yourself with:
+
+	rpi3 ~$ sudo irrecord -n -d /dev/lirc0 ~/lircd.conf
+
+That's your exercise ;-) Haven't tested it. If you have your config file move it to /etc/lirc/lircd.conf.d/ and restart lirc to load this file:
+
+	rpi3 ~$ sudo systemctl restart lircd
+
+Now we can look if we get the pushed buttons. Start irw and push buttons on your remote control. You should get something like:
+
+	rpi3 ~$ irw
+	0000000000002422 00 KEY_VOLUMEUP Sony_RMT-CS33AD
+	0000000000002422 01 KEY_VOLUMEUP Sony_RMT-CS33AD
+	0000000000002422 02 KEY_VOLUMEUP Sony_RMT-CS33AD
+	0000000000006422 00 KEY_VOLUMEDOWN Sony_RMT-CS33AD
+	0000000000006422 01 KEY_VOLUMEDOWN Sony_RMT-CS33AD
+	0000000000006422 02 KEY_VOLUMEDOWN Sony_RMT-CS33AD
+
+Last step is to give these events actions, e.g. start a program. For this we use the program irexec. This needs its config file ~/.config/lircrc with entries like this (simple example):
+
+	begin
+	prog = irexec
+	button = KEY_VOLUMEUP
+	config = echo "Volume-Up"
+	end
+	begin
+	prog = irexec
+	button = KEY_VOLUMEDOWN
+	config = echo "Volume-Down"
+	end
+
+For any button add a new block begin ... end. The button name is exact the name you get with irw. As action (line config =) I do a simple echo so you can see on the console what button was pressed. Here you can call any other program, e.g. system programs, bash scripts, python programs, what you want. Look at man irexec.
 
 
 [1] https://www.amazon.com/Infrared-Shield-for-Raspberry-Pi/dp/B00K2IICKK/ref=pd_sbs_328_1?_encoding=UTF8&psc=1&refRID=1QPY33VFCGETBJ17K8QE
