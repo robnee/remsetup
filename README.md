@@ -250,7 +250,21 @@ Unmount or eject the SD card.
 
 ssh pi@raspberrypi
 
-Run /boot/tools/config.sh
+Run:
+	/boot/tools/config.sh
+
+after reboot run it again to finish config
+
+	/boot/tools/config.sh
+
+get projects
+
+	cd ~
+	mkdir projects
+	cd projects
+	svn checkout svn+ssh://rnee@centos7/home/Shared/repository/projects/bottle
+	svn checkout svn+ssh://rnee@centos7/home/Shared/repository/projects/rnee
+	svn checkout svn+ssh://rnee@centos7/home/Shared/repository/projects/lirc
 
 06/24/2019
 
