@@ -375,6 +375,36 @@ Last step is to give these events actions, e.g. start a program. For this we use
 For any button add a new block begin ... end. The button name is exact the name you get with irw. As action (line config =) I do a simple echo so you can see on the console what button was pressed. Here you can call any other program, e.g. system programs, bash scripts, python programs, what you want. Look at man irexec.
 
 
+### DeviceTree info
+
+Name:   gpio-ir
+Info:   Use GPIO pin as rc-core style infrared receiver input. The rc-core-
+        based gpio_ir_recv driver maps received keys directly to a
+        /dev/input/event* device, all decoding is done by the kernel - LIRC is
+        not required! The key mapping and other decoding parameters can be
+        configured by "ir-keytable" tool.
+Load:   dtoverlay=gpio-ir,<param>=<val>
+Params: gpio_pin                Input pin number. Default is 18.
+
+        gpio_pull               Desired pull-up/down state (off, down, up)
+                                Default is "up".
+
+        rc-map-name             Default rc keymap (can also be changed by
+                                ir-keytable), defaults to "rc-rc6-mce"
+
+
+Name:   gpio-ir-tx
+Info:   Use GPIO pin as bit-banged infrared transmitter output.
+        This is an alternative to "pwm-ir-tx". gpio-ir-tx doesn't require
+        a PWM so it can be used together with onboard analog audio.
+Load:   dtoverlay=gpio-ir-tx,<param>=<val>
+Params: gpio_pin                Output GPIO (default 18)
+
+        invert                  "1" = invert the output (make it active-low).
+                                Default is "0" (active-high).
+
+
+
 [1] https://www.amazon.com/Infrared-Shield-for-Raspberry-Pi/dp/B00K2IICKK/ref=pd_sbs_328_1?_encoding=UTF8&psc=1&refRID=1QPY33VFCGETBJ17K8QE
 [2] http://learn.linksprite.com/raspberry-pi/shield/infrared-transceiver-on-raspberry-pi-lirc-software-installation-and-configuration/
 [3] https://www.hackster.io/nathansouthgate/control-rpi-from-alexa-b558ad
