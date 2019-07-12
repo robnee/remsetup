@@ -8,6 +8,28 @@
 
 #-------------------------------------------------------------------------------
 
+do_timezone()
+{
+	echo
+	echo "Set /etc/timezone to $1 ..."
+
+	echo $1 | sudo cat > /etc/timezone
+}
+
+#-------------------------------------------------------------------------------
+
+do_hostname()
+{
+	echo
+	echo "Set /etc/hostname to $1 ..."
+
+	echo $1 | sudo cat > /etc/hostname
+
+	sed s/raspberrypi/$1/ /etc/hosts | sudo cat > /etc/hosts
+}
+
+#-------------------------------------------------------------------------------
+
 do_packages()
 {
 	echo
@@ -35,7 +57,7 @@ do_boot_config()
 
 			# IR Remote Settings
 			gpu_mem=16
-			dtoverlay=gpio-ir,gpio_out_pin=22
+			dtoverlay=gpio-ir-tx,gpio_pin=22
 		EOF
 
 		config_count=$(( $config_count + 1 ))
@@ -45,13 +67,13 @@ do_boot_config()
 }
 
 #-------------------------------------------------------------------------------
+# This is a legacy file for Raspbian pre Stretch
 
 do_etc_modules()
 {
 	echo
 	echo "update /etc/modules ..."
 
-	#todo: maybe this does nothing?
 	grep --quiet "lirc_dev" /etc/modules
 	if [ "$?" -ne "0" ]; then
 		sudo cp -vf /etc/modules /etc/modules.orig
@@ -69,6 +91,7 @@ do_etc_modules()
 }
 
 #-------------------------------------------------------------------------------
+# this is for versions of Lirc prior to 0.9.4
 
 do_lirc_hardware()
 {
@@ -143,12 +166,12 @@ do_lirc_options()
 			allow-simulate  = No
 			repeat-max      = 600
 			#effective-user =
-			#listen         = [address:]port
+			listen          = 8765
 			#connect        = host[:port]
-			#loglevel       = 6
+			logfile         = /var/log/lirc.log
+			loglevel        = 6
 			#release        = true
 			#release_suffix = _EVUP
-			#logfile        = ...
 			#driver-options = ...
 
 			[lircmd]
@@ -187,7 +210,7 @@ MNTDIR=./mnt
 LOGDIR=./logs
 LOGFILE=$LOGDIR/$ymd.log
 SCRIPTDIR=$(dirname $0)
-HOSTNAME=$(hostname)
+HOSTNAME=remstage
 UNAME=$(uname -a)
 
 config_count=0
@@ -201,9 +224,13 @@ echo "Hostname      : $HOSTNAME"
 echo "System        : $UNAME"
 echo
 
+do_timezone "US/Eastern"
+do_hostname $HOSTNAME
+
 do_packages
 do_boot_config
-do_lirc_hardware
+#do_etc_modules
+#do_lirc_hardware
 do_lirc_options
 
 echo
