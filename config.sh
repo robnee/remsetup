@@ -331,7 +331,7 @@ if [ $config_count -gt 0 ]; then
 fi
 
 # After first reboot
-`
+
 echo
 echo "enable Lirc service ..."
 

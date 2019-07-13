@@ -127,7 +127,7 @@ WPA
 
 # copy over config files
 mkdir --verbose $MNTDIR/tools
-cp README.md config.sh $MNTDIR/tools
+cp README.md config.sh prep.sh $MNTDIR/tools
 
 ls -l $MNTDIR
 cat $WPAFILE
