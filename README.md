@@ -74,7 +74,6 @@ Add host name. todo: what does raspi-config do when changing locale?
 	sudo apt-get -y upgrade
 	
 	sudo apt-get -y install lirc
-	sudo apt-get -y install subversion
 	sudo apt-get -y install git
 
 
@@ -265,6 +264,13 @@ get projects
 	svn checkout svn+ssh://rnee@centos7/home/Shared/repository/projects/bottle
 	svn checkout svn+ssh://rnee@centos7/home/Shared/repository/projects/rnee
 	svn checkout svn+ssh://rnee@centos7/home/Shared/repository/projects/lirc
+
+Setup IR Remote applications
+
+	cd bottle
+	virtualenv venv
+	. venv/bin/activate
+	pip3 install -r requirements.txt
 
 06/24/2019
 
