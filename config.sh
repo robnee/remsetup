@@ -257,7 +257,6 @@ do_lirc_hardware()
 
 			# Don't start lircmd even if there seems to be a good config file
 			# START_LIRCMD=false
-			q
 
 			# Don't start irexec, even if a good config file seems to exist.
 			# START_IREXEC=false
