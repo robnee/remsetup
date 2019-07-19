@@ -17,7 +17,9 @@ do_packages()
 	sudo apt --yes update
 	sudo apt --yes upgrade
 
-	sudo apt --yes install git subversion lirc lirc-doc
+	sudo apt --yes install git lirc lirc-doc python3-pip wiringpi
+
+	sudo pip3 install virtualenv
 }
 
 #-------------------------------------------------------------------------------
@@ -151,14 +153,14 @@ do_lirc_options()
 			output          = /var/run/lirc/lircd
 			pidfile         = /var/run/lirc/lircd.pid
 			plugindir       = /usr/lib/arm-linux-gnueabihf/lirc/plugins
+			logfile         = /var/log/lirc.log
+			loglevel        = 6
 			permission      = 666
 			allow-simulate  = No
 			repeat-max      = 600
-			#effective-user =
 			listen          = $1
+			#effective-user =
 			#connect        = host[:port]
-			logfile         = /var/log/lirc.log
-			loglevel        = 6
 			#release        = true
 			#release_suffix = _EVUP
 			#driver-options = ...
@@ -294,7 +296,7 @@ start_time=`date +'%Y-%m-%d %H:%M:%S'`
 SCRIPTDIR=$(dirname $0)
 HOSTNAME=remstage
 LIRCPORT=8765
-LIRCPIN=23
+LIRCPIN=22  # Pin #17 is the standard IR send pin
 UNAME=$(uname -a)
 
 . /etc/os-release
