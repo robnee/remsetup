@@ -226,7 +226,7 @@ For Linux mount the drive for in RW mode:
 
 	sudo mount -t vfat /dev/sdx1 /mnt/disk -o rw,umask=0000
 
-Add two files.  An empty file named `ssh` and a file named `wpa_supplicant.conf` with the SSID and password of the wireless access point to connect to:
+Add two files.  An empty file named `ssh` and a file named `wpa_supplicant.conf` with the SSID and password of the wireless access point to connect to.  Be careful to not included spaces around the equals signs:
 
 	cd /mnt/disk
 	cat > wpa_supplicant.conf
