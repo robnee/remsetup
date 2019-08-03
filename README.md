@@ -272,6 +272,29 @@ Setup IR Remote applications
 	. venv/bin/activate
 	pip3 install -r requirements.txt
 
+
+#### Configure for low power:
+
+- Turn off HDMI
+
+	/usr/bin/tvservice -o (-p to re-enable). Add the line to /etc/rc.local to disable HDMI on boot.
+
+- Turn off LEDs
+
+If you want to turn off the LED on the Pi Zero completely, run the following two commands:
+
+	# Set the Pi Zero ACT LED trigger to 'none'.
+	echo none | sudo tee /sys/class/leds/led0/trigger
+
+	# Turn off the Pi Zero ACT LED.
+	echo 1 | sudo tee /sys/class/leds/led0/brightness
+
+To make these settings permanent, add the following lines to your Pi's /boot/config.txt file and reboot:
+
+	# Disable the ACT LED on the Pi Zero.
+	dtparam=act_led_trigger=none
+	dtparam=act_led_activelow=on
+
 06/24/2019
 
 GitHub gist: https://gist.githubusercontent.com/prasanthj/c15a5298eb682bde34961c322c95378b/raw/1c20ca90ab1ed8ef83b7839983dd740c38a00ffc/lirc-pi3.txt

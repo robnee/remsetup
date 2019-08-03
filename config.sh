@@ -17,7 +17,9 @@ do_packages()
 	sudo apt --yes update
 	sudo apt --yes upgrade
 
-	sudo apt --yes install git lirc lirc-doc python3-pip wiringpi
+	sudo apt --yes install git lirc lirc-doc python3-pip
+	# optional
+	# sudo apt --yes install wiringpi powertop cpufrequtils
 
 	sudo pip3 install virtualenv
 }
