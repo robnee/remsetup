@@ -12,7 +12,7 @@ mon=`date +%B`
 ymd=`date +%Y-%m-%d`
 start_time=`date +'%Y-%m-%d %H:%M:%S'`
 
-MNTDIR=./mnt
+MNTDIR=./boot
 LOGDIR=./logs
 LOGFILE=$LOGDIR/$ymd.log
 
@@ -22,10 +22,18 @@ WPAFILE=$MNTDIR/wpa_supplicant.conf
 NETFILE=$SCRIPTDIR/network
 
 #-------------------------------------------------------------------------------
+
+show_avail_devices()
+{
+	echo available devices:
+	lsblk --list --scsi --noheadings --output NAME,TYPE,TRAN
+}
+
+#-------------------------------------------------------------------------------
 #inactive
 do_boot_config()
 {
-	local file=/boot/config.txt
+	local file=$MNTDIR/config.txt
 
 	grep --quiet "gpu_mem=16" $file
 	if [ "$?" -ne "0" ]; then
@@ -45,14 +53,15 @@ do_boot_config()
 
 do_boot_cmdline()
 {
-	local file=/boot/cmdline.txt
+	local file=$MNTDIR/cmdline.txt
 
+	# Check for and disable init_resize script
 	grep --quiet "init_resize" $file
-	if [ "$?" -ne "0" ]; then
-		echo "update $file init_resize $1 ..."
+	if [ $? -eq 0 ]; then
+		echo -e "\nupdate $file to remove init_resize.sh ..."
 
 		sudo cp -f $file $file.orig
-		sed s/init=/usr/lib/raspi-config/init_resize.sh// | sudo tee $file
+		sed s/init=.*init_resize.sh// $file | sudo tee $file
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -67,9 +76,10 @@ do_ssh()
 	local file=$MNTDIR/ssh
 
 	if [ ! -f "$file" ]; then
-		echo "enabling ssh ..."
+		echo -e "\nenabling ssh ..."
 
 		touch $file
+		ls -l $file
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -84,10 +94,10 @@ do_wifi()
 	local file=$WPAFILE
 
 	if [ ! -f "$file" ]; then
-		echo "enabling wifi ..."
+		echo -e "\nenabling wifi ..."
 
 		# Config and enable wifi.  Note: no spaces to either side of equals sign
-		cat > $WPAFILE <<-WPA
+		cat > $file <<-WPA
 		country=US
 		ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 		update_config=1
@@ -95,8 +105,10 @@ do_wifi()
 
 		# add the wifi credentials
 		if [ -e $NETFILE ]; then
-			cat $NETFILE >> $WPAFILE
+			cat $NETFILE >> $file
 		fi
+
+		ls -l $file
 	else
 		echo "$file already configured"
 	fi
@@ -110,6 +122,7 @@ do_wifi()
 
 if [ "$#" -ne 2 ]; then
     echo "usage: prep.sh <raspbian img file> <block device to write image to>"
+	show_avail_devices
 	exit 1
 fi
 
@@ -120,9 +133,6 @@ if [ ! -f "$img" ]; then
 	echo "$img does not exist"
 	exit 1
 fi
-
-echo available devices
-lsblk --list --scsi --noheadings --output NAME,TYPE,TRAN
 
 if [ ! -e "$dev" ]; then
 	echo "$dev does not exist"
@@ -155,15 +165,16 @@ if [ "$filetype" != "DOS/MBR" ]; then
 	exit 1
 fi
 
-imgsize=`du --block-size=1MB $img | cut -f1`
-echo $img size $imgsize
+show_avail_devices
+
+imgsize=`du --block-size=1M $img | cut -f1`
 
 echo --------------------------------------------------------------------------------
 echo Setup workspace
 echo --------------------------------------------------------------------------------
 
 echo "Img file         : $img"
-echo "Img size         : $imgsize MB"
+echo "Img size         : $imgsize MiB"
 echo "Target           : $dev"
 echo "SSH              : on"
 echo "WiFi credentials : $NETFILE"
@@ -180,7 +191,7 @@ fi
 
 config_count=0
 
-echo "flashing image..."
+echo "flashing $img (${imgsize} MiB) ..."
 sudo dd if=$img status=progress of=$dev bs=1M
 
 echo "mounting boot partition..."
