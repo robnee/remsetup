@@ -13,15 +13,94 @@ ymd=`date +%Y-%m-%d`
 start_time=`date +'%Y-%m-%d %H:%M:%S'`
 
 MNTDIR=./mnt
-WPAFILE=$MNTDIR/wpa_supplicant.conf
 LOGDIR=./logs
 LOGFILE=$LOGDIR/$ymd.log
 
-# for better security set these in environment rather than hardcoded here
-#WPASSID=
-#WPAPSK=
-
 SCRIPTDIR=$(dirname $0)
+
+WPAFILE=$MNTDIR/wpa_supplicant.conf
+NETFILE=$SCRIPTDIR/network
+
+#-------------------------------------------------------------------------------
+#inactive
+do_boot_config()
+{
+	local file=/boot/config.txt
+
+	grep --quiet "gpu_mem=16" $file
+	if [ "$?" -ne "0" ]; then
+		echo "update $file gpio_pin $1 ..."
+
+		sudo cp -f $file $file.orig
+		cat <<-EOF | sudo tee --append $file
+		EOF
+
+		config_count=$(( $config_count + 1 ))
+	else
+		echo "$file already configured"
+	fi
+}
+
+#-------------------------------------------------------------------------------
+
+do_boot_cmdline()
+{
+	local file=/boot/cmdline.txt
+
+	grep --quiet "init_resize" $file
+	if [ "$?" -ne "0" ]; then
+		echo "update $file init_resize $1 ..."
+
+		sudo cp -f $file $file.orig
+		sed s/init=/usr/lib/raspi-config/init_resize.sh// | sudo tee $file
+
+		config_count=$(( $config_count + 1 ))
+	else
+		echo "$file already configured"
+	fi
+}
+
+#-------------------------------------------------------------------------------
+
+do_ssh()
+{
+	local file=$MNTDIR/ssh
+
+	if [ ! -f "$file" ]; then
+		echo "enabling ssh ..."
+
+		touch $file
+
+		config_count=$(( $config_count + 1 ))
+	else
+		echo "$file already configured"
+	fi
+}
+
+#-------------------------------------------------------------------------------
+
+do_wifi()
+{
+	local file=$WPAFILE
+
+	if [ ! -f "$file" ]; then
+		echo "enabling wifi ..."
+
+		# Config and enable wifi.  Note: no spaces to either side of equals sign
+		cat > $WPAFILE <<-WPA
+		country=US
+		ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+		update_config=1
+		WPA
+
+		# add the wifi credentials
+		if [ -e $NETFILE ]; then
+			cat $NETFILE >> $WPAFILE
+		fi
+	else
+		echo "$file already configured"
+	fi
+}
 
 #-------------------------------------------------------------------------------
 
@@ -34,18 +113,19 @@ if [ "$#" -ne 2 ]; then
 	exit 1
 fi
 
-if [ ! -f "$1" ]; then
-	echo "$1 does not exist"
+img=$1
+dev=$2
+
+if [ ! -f "$img" ]; then
+	echo "$img does not exist"
 	exit 1
 fi
-
-dev=$2
 
 echo available devices
 lsblk --list --scsi --noheadings --output NAME,TYPE,TRAN
 
 if [ ! -e "$dev" ]; then
-	echo "$2 does not exist"
+	echo "$dev does not exist"
 	exit 1
 fi
 
@@ -69,28 +149,28 @@ if [ -f $MNTDIR ] || [ -d $MNTDIR ]; then
 fi
 
 # Check if this is an image file
-filetype=`file "$1" | grep -o "DOS/MBR"`
+filetype=`file "$img" | grep -o "DOS/MBR"`
 if [ "$filetype" != "DOS/MBR" ]; then
-	echo "$1 does not appear to be image file"
+	echo "$img does not appear to be image file"
 	exit 1
 fi
 
-imgsize=`du --block-size=1MB $1 | cut -f1`
-echo $1 size $imgsize
+imgsize=`du --block-size=1MB $img | cut -f1`
+echo $img size $imgsize
 
 echo --------------------------------------------------------------------------------
 echo Setup workspace
 echo --------------------------------------------------------------------------------
 
-echo "Img file         : $1"
+echo "Img file         : $img"
 echo "Img size         : $imgsize MB"
 echo "Target           : $dev"
 echo "SSH              : on"
-echo "WiFi credentials : $WPASSID /" `echo $WPAPSK | cut -c1-3`"..."
+echo "WiFi credentials : $NETFILE"
 echo
 
-if [ "$WPASSID" == "" ] || [ "$WPAPSK" == "" ]; then
-	read -p "WiFi credentials not set.  Continue? [y|N]" yn
+if [ ! -e $NETFILE ]; then
+	read -p "WiFi credential file (./network) not found.  Continue? [y|N]" yn
 	case $yn in
 		([Yy]* ) break;;
 		([Nn]* ) exit;;
@@ -98,34 +178,24 @@ if [ "$WPASSID" == "" ] || [ "$WPAPSK" == "" ]; then
 	esac
 fi
 
-echo "flashing image..."
-sudo dd if=$1 status=progress of=$dev bs=1M
+config_count=0
 
-echo "configuring wifi and ssh..."
+echo "flashing image..."
+sudo dd if=$img status=progress of=$dev bs=1M
+
+echo "mounting boot partition..."
 if [ ! -d $MNTDIR ]; then
 	mkdir --verbose $MNTDIR
 fi
-
 sudo mount --verbose --types vfat ${dev}1 $MNTDIR --options rw,umask=0000
-
 sudo df
 
-# Enable ssh
-touch $MNTDIR/ssh
+#do_boot_config
+do_boot_cmdline
+do_ssh
+do_wifi
 
-# Config and enable wifi.  Note: no spaces to either side of equals sign
-cat > $WPAFILE <<WPA
-country=US
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
-network={
-	ssid="$WPASSID"
-	psk="$WPAPSK"
-	key_mgmt=WPA-PSK
-}
-WPA
-
-# copy over config files
+# copy over config tools
 mkdir --verbose $MNTDIR/tools
 cp README.md config.sh prep.sh $MNTDIR/tools
 
