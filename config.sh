@@ -18,8 +18,9 @@ do_packages()
 	sudo apt --yes upgrade
 
 	sudo apt --yes install git lirc lirc-doc python3-pip
+	sudo apt --yes autoremove
 	# optional
-	# sudo apt --yes install wiringpi powertop cpufrequtils
+	# sudo apt --yes install powertop cpufrequtils
 
 	sudo pip3 install virtualenv
 }
@@ -29,6 +30,9 @@ do_packages()
 do_timezone()
 {
 	local file=/etc/timezone
+
+	echo
+	echo "update $file ..."
 
 	grep --quiet "$1" $file
 	if [ "$?" -ne "0" ]; then
@@ -48,17 +52,23 @@ do_hostname()
 {
 	local file=/etc/hostname
 
-	grep --quiet "$1" $file
-	if [ "$?" -ne "0" ]; then
-		echo "Set $file to $1 ..."
+	echo
+	echo "update $file ..."
 
-		echo $1 | sudo dd status=none of=$file
+	hostname=$1
+	current_hostname=$(<$file)
 
-		sed s/raspberrypi/$1/ /etc/hosts | sudo dd status=none of=/etc/hosts
+	if [ "$current_hostname" = "$hostname" ]; then
+		echo "Set $file to $hostname ..."
+		exit 1
+
+		echo $hostname | sudo dd status=none of=$file
+
+		sed s/$current_hostname/$hostname/g /etc/hosts | sudo dd status=none of=/etc/hosts
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "$file already set to $1"
+		echo "$file already set to $hostname"
 	fi
 }
 
@@ -67,6 +77,9 @@ do_hostname()
 do_locale()
 {
 	local file=/etc/default/locale
+
+	echo
+	echo "update $file ..."
 
 	grep --quiet "$1" $file
 	if [ "$?" -ne "0" ]; then
@@ -85,6 +98,9 @@ do_locale()
 do_keyboard()
 {
 	local file=/etc/default/keyboard
+
+	echo
+	echo "update $file ..."
 
 	grep --quiet "$1" $file
 	if [ "$?" -ne "0" ]; then
@@ -113,6 +129,9 @@ do_boot_config()
 {
 	local file=/boot/config.txt
 
+	echo
+	echo "update $file ..."
+
 	grep --quiet "gpu_mem=16" $file
 	if [ "$?" -ne "0" ]; then
 		echo "update $file gpio_pin $1 ..."
@@ -136,6 +155,9 @@ do_boot_config()
 do_lirc_options()
 {
 	local file=/etc/lirc/lirc_options.conf
+
+	echo
+	echo "update $file ..."
 
 	grep --quiet "lirc0" $file
 	if [ "$?" -ne "0" ]; then
@@ -195,6 +217,9 @@ do_lircd_conf()
 {
 	local file=/etc/lirc/lircd.conf
 
+	echo
+	echo "update $file ..."
+
 	if [ ! -e $file ]; then
 		echo "create $file ..."
 
@@ -211,6 +236,9 @@ do_lircd_conf()
 		echo "$file already configured"
 	fi
 }
+
+#-------------------------------------------------------------------------------
+# The following functions are no longer used or have been superceded by above.
 
 #-------------------------------------------------------------------------------
 # This is a legacy file for Raspbian pre Stretch
@@ -313,6 +341,7 @@ echo "Release       : $NAME $VERSION"
 
 config_count=0
 
+# pre-boot tasks
 do_hostname $HOSTNAME
 do_timezone "America/New_York"
 do_locale "C.UTF-8"
@@ -326,14 +355,15 @@ do_lircd_conf
 echo
 echo "made $config_count config file changes"
 
-# See if we should reboot
+# See if we did anything and should reboot
 if [ $config_count -gt 0 ]; then
 	echo rebooting in 10 seconds ...
 	sleep 10
 	sudo reboot
 fi
 
-# After first reboot
+# After first reboot.  If you rerun the script after boot it should detect zero
+# changes are in the pre-boot stuff and skip the reboot landing us here.
 
 echo
 echo "enable Lirc service ..."

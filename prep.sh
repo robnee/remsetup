@@ -116,9 +116,15 @@ do_wifi()
 
 #-------------------------------------------------------------------------------
 
-# . $SCRIPTDIR/lib.sh
+do_tools()
+{
+	# copy over config tools
+	mkdir --verbose $MNTDIR/tools
+	cp README.md config.sh prep.sh $MNTDIR/tools
+}
 
 #-------------------------------------------------------------------------------
+# main
 
 if [ "$#" -ne 2 ]; then
     echo "usage: prep.sh <raspbian img file> <block device to write image to>"
@@ -205,10 +211,7 @@ sudo df
 do_boot_cmdline
 do_ssh
 do_wifi
-
-# copy over config tools
-mkdir --verbose $MNTDIR/tools
-cp README.md config.sh prep.sh $MNTDIR/tools
+do_tools
 
 ls -l $MNTDIR
 cat $WPAFILE
