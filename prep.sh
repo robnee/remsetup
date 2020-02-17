@@ -20,13 +20,14 @@ SCRIPTDIR=$(dirname $0)
 
 WPAFILE=$MNTDIR/wpa_supplicant.conf
 NETFILE=$SCRIPTDIR/network
+PARTSIZE=4GiB
 
 #-------------------------------------------------------------------------------
 
 show_avail_devices()
 {
 	echo available devices:
-	lsblk --list --scsi --noheadings --output NAME,TYPE,TRAN
+	lsblk --output NAME,MODEL,TYPE,FSTYPE,RM,SIZE,TRAN,LABEL,MOUNTPOINT
 }
 
 #-------------------------------------------------------------------------------
@@ -124,6 +125,24 @@ do_tools()
 }
 
 #-------------------------------------------------------------------------------
+
+do_resize()
+{
+	local dev=$1
+	local num=$2
+	local size=$3
+
+	echo -e "\nresize root filesystem (${dev}${num} $size ..."
+
+	# resize the main partition
+	sudo parted $dev resizepart $num $size
+
+	sudo e2fsck -f ${dev}${num}
+	sudo resize2fs ${dev}${num}
+}
+
+
+#-------------------------------------------------------------------------------
 # main
 
 if [ "$#" -ne 2 ]; then
@@ -205,19 +224,26 @@ if [ ! -d $MNTDIR ]; then
 	mkdir --verbose $MNTDIR
 fi
 sudo mount --verbose --types vfat ${dev}1 $MNTDIR --options rw,umask=0000
-sudo df
 
 #do_boot_config
 do_boot_cmdline
 do_ssh
 do_wifi
 do_tools
+do_resize $dev 2 $PARTSIZE
 
-ls -l $MNTDIR
+echo -e "\nchanged files:"
+find $MNTDIR -mtime -1 | xargs ls -ld
+echo -e "\n$WPAFILE:"
 cat $WPAFILE
+echo -e "\npartitions:"
+sudo parted $dev print free
 
 sudo umount $MNTDIR
 
 rm --recursive --force --verbose $MNTDIR
+
+# make the local machine forget past versions
+ssh-keygen -f "/home/pi/.ssh/known_hosts" -R "raspberrypi"
 
 echo "done"
