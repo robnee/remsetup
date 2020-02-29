@@ -27,104 +27,6 @@ do_packages()
 
 #-------------------------------------------------------------------------------
 
-do_timezone()
-{
-	local file=/etc/timezone
-
-	echo
-	echo "update $file ..."
-
-	grep --quiet "$1" $file
-	if [ "$?" -ne "0" ]; then
-		echo "Set $file to $1 ..."
-
-		sudo timedatectl set-timezone $1
-
-		config_count=$(( $config_count + 1 ))
-	else
-		echo "$file already set to $1"
-	fi
-}
-
-#-------------------------------------------------------------------------------
-
-do_hostname()
-{
-	local file=/etc/hostname
-
-	echo
-	echo "update $file ..."
-
-	hostname=$1
-	current_hostname=$(<$file)
-
-	if [ "$current_hostname" = "$hostname" ]; then
-		echo "Set $file to $hostname ..."
-		exit 1
-
-		echo $hostname | sudo dd status=none of=$file
-
-		sed s/$current_hostname/$hostname/g /etc/hosts | sudo dd status=none of=/etc/hosts
-
-		config_count=$(( $config_count + 1 ))
-	else
-		echo "$file already set to $hostname"
-	fi
-}
-
-#-------------------------------------------------------------------------------
-
-do_locale()
-{
-	local file=/etc/default/locale
-
-	echo
-	echo "update $file ..."
-
-	grep --quiet "$1" $file
-	if [ "$?" -ne "0" ]; then
-		echo "Set $file to $1 ..."
-
-		echo LANG=$1 | sudo dd status=none of=$file
-
-		config_count=$(( $config_count + 1 ))
-	else
-		echo "$file already set to $1"
-	fi
-}
-
-#-------------------------------------------------------------------------------
-
-do_keyboard()
-{
-	local file=/etc/default/keyboard
-
-	echo
-	echo "update $file ..."
-
-	grep --quiet "$1" $file
-	if [ "$?" -ne "0" ]; then
-		echo "set $file to $1 $2 ..."
-
-		sudo cp -f $file $file.orig
-		cat <<-EOF | sudo dd status=none of=$file
-		    # IR Remote Settings
-		    XKBMODEL="$1"
-		    XKBLAYOUT="$2"
-		    XKBVARIANT=""
-		    XKBOPTIONS=""
-
-		    BACKSPACE="guess"
-		EOF
-
-		config_count=$(( $config_count + 1 ))
-	else
-		echo "$file already set to $1 $2"
-	fi
-}
-
-#-------------------------------------------------------------------------------
-
 do_boot_config()
 {
 	local file=/boot/config.txt
@@ -313,20 +215,17 @@ do_lirc_hardware()
 }
 
 #-------------------------------------------------------------------------------
-
-# Get the date info
-day=`date +%A`
-dom=`date +%d`
-dow=`date +%w`
-mon=`date +%B`
-ymd=`date +%Y-%m-%d`
-start_time=`date +'%Y-%m-%d %H:%M:%S'`
+# main
 
 SCRIPTDIR=$(dirname $0)
 HOSTNAME=remstage
 LIRCPORT=8765
 LIRCPIN=22  # Pin #17 is the standard IR send pin
 UNAME=$(uname -a)
+
+if [ "$#" -gt 0 ]; then
+	HOSTNAME=$1
+fi
 
 . /etc/os-release
 
@@ -341,16 +240,23 @@ echo "Release       : $NAME $VERSION"
 
 config_count=0
 
-# pre-boot tasks
-do_hostname $HOSTNAME
-do_timezone "America/New_York"
-do_locale "C.UTF-8"
-do_keyboard "pc101" "us"
+do_boot_config $LIRCPIN
+do_lircd_conf
+
+echo
+echo "made $config_count config changes"
+
+# See if we did anything and should reboot
+if [ $config_count -gt 0 ]; then
+	echo rebooting in 10 seconds ...
+	sleep 10
+	sudo reboot
+fi
+
+config_count=0
 
 do_packages
-do_boot_config $LIRCPIN
 do_lirc_options $LIRCPORT
-do_lircd_conf
 
 echo
 echo "made $config_count config file changes"
