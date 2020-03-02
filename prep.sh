@@ -39,10 +39,10 @@ do_resize()
 	# of part and size of /dev/sda2 to see if sizes are different
 
 	# resize the main partition
-	sudo parted $dev resizepart $num $size
+	parted $dev resizepart $num $size
 
-	sudo e2fsck -f ${dev}${num}
-	sudo resize2fs ${dev}${num}
+	e2fsck -f ${dev}${num}
+	resize2fs ${dev}${num}
 
 	config_count=$(( $config_count + 1 ))
 }
@@ -54,12 +54,12 @@ do_boot_cmdline()
 	local file=$BOOT/cmdline.txt
 
 	# Check for and disable init_resize script
-	grep --quiet "init_resize" $file
+	grep --no-messages "init_resize" $file
 	if [ $? -eq 0 ]; then
 		echo -e "\nupdate $file to remove init_resize.sh ..."
 
-		sudo cp -f $file $file.orig
-		sed s/init=.*init_resize.sh// $file | sudo tee $file
+		cp -f $file $file.orig
+		sed s/init=.*init_resize.sh// $file | tee $file
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -134,18 +134,26 @@ do_scripts()
 
 #-------------------------------------------------------------------------------
 
-do_timezone()
+get_timezone()
+{
+	local file=$ROOT/etc/timezone
+	CUR_TIMEZONE=$(<$file)
+}
+
+set_timezone()
 {
 	local tz=$1
 
 	local file=$ROOT/etc/timezone
 
-	grep --quiet "$tz" $file
-	if [ "$?" -ne "0" ]; then
-		echo "Set $file to $tz ..."
+	get_timezone
 
-		# sudo chroot $ROOT timedatectl set-timezone $tz
-		echo $tz | sudo dd status=none of=$file
+	if [ "$tz" != "$CUR_TIMEZONE" ]; then
+		echo "Set $file from $CUR_TIMEZONE to $tz ..."
+
+		echo $tz > $file
+		rm --force --verbose /etc/localtime
+		ln --symbolic --relative /usr/share/zoneinfo/$tz /etc/localtime
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -155,64 +163,90 @@ do_timezone()
 
 #-------------------------------------------------------------------------------
 
-do_hostname()
+get_hostname()
 {
+	local file=$ROOT/etc/hostname
+	CUR_HOSTNAME=$(<$file)
+}
+
+set_hostname()
+{
+	local new_hostname=$1
+
 	local file=$ROOT/etc/hostname
 	local hosts=$ROOT/etc/hosts
 
-	hostname=$1
-	current_hostname=$(<$file)
+	get_hostname
 
-	if [ "$current_hostname" = "$hostname" ]; then
-		echo "Set hostname to $hostname ..."
+	if [ "$new_hostname" != "$CUR_HOSTNAME" ]; then
+		echo "Set hostname from $CUR_HOSTNAME to $new_hostname ..."
 
-		echo $hostname | sudo dd status=none of=$file
+		echo $new_hostname > $file
 
-		sed s/$current_hostname/$hostname/g $hosts | sudo dd status=none of=$hosts
+		sed s/$CUR_HOSTNAME/$new_hostname/g $hosts > $hosts
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "hostname $hostname already configured"
+		echo "hostname $new_hostname already configured"
 	fi
 }
 
 #-------------------------------------------------------------------------------
 
-do_locale()
+get_locale()
 {
 	local file=$ROOT/etc/default/locale
+	CUR_LOCALE=`grep LANG $file | cut -d'=' -f2`
+}
 
-	grep --quiet "$1" $file
-	if [ "$?" -ne "0" ]; then
-		echo "Set $file to $1 ..."
+set_locale()
+{
+	local locale=$1
 
-		echo LANG=$1 | sudo dd status=none of=$file
+	local file=$ROOT/etc/default/locale
+
+	get_locale
+
+	if [ "$locale" != "$CUR_LOCALE" ]; then
+		echo "Set $file from $CUR_LOCALE to $locale ..."
+
+		echo LANG=$locale > $file
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "$file already set to $1"
+		echo "$file already set to $locale"
 	fi
 }
 
 #-------------------------------------------------------------------------------
 
-do_keyboard()
+get_keyboard()
 {
 	local file=$ROOT/etc/default/keyboard
+	. $file
+}
 
-	grep --quiet "$1" $file
-	if [ "$?" -ne "0" ]; then
-		echo "set $file to $1 $2 ..."
+set_keyboard()
+{
+	local model=$1
+	local layout=$2
 
-		sudo cp -f $file $file.orig
-		cat <<-EOF | sudo dd status=none of=$file
-		    # IR Remote Settings
-		    XKBMODEL="$1"
-		    XKBLAYOUT="$2"
-		    XKBVARIANT=""
-		    XKBOPTIONS=""
+	local file=$ROOT/etc/default/keyboard
 
-		    BACKSPACE="guess"
+	get_keyboard
+
+	if [ "$model" != "$XKBMODEL" ] || [ "$layout" != "$XKBLAYOUT" ]; then
+		echo "set $file from $XKBMODEL $XKBLAYOUT to $model $layout ..."
+
+		cp -f $file $file.orig
+		cat <<-EOF > $file
+		# IR Remote Settings
+		XKBMODEL="$model"
+		XKBLAYOUT="$layout"
+		XKBVARIANT=""
+		XKBOPTIONS=""
+
+		BACKSPACE="guess"
 		EOF
 
 		config_count=$(( $config_count + 1 ))
@@ -223,37 +257,104 @@ do_keyboard()
 
 #-------------------------------------------------------------------------------
 
-do_tvservice()
+get_tvservice()
 {
-	local cmd="@reboot tvservice $1"
+	local file=$ROOT/var/spool/cron/crontabs/root
+
+	if [ -f $file ]; then
+		grep --no-messages "tvservice -off" $file
+		if [ $? -eq 0 ]; then
+			CUR_TVSERVICE="--off"
+			return
+		fi
+	fi
+
+	CUR_TVSERVICE="--preferred"
+}
+
+set_tvservice()
+{
+	local state=$1
 
 	local file=$ROOT/var/spool/cron/crontabs/root
 
-	sudo grep --no-messages "tvservice" $file
-	if [ "$?" -ne "0" ]; then
-		echo "set $file to $cmd ..."
+	get_tvservice
+
+	if [ "$state" != "$CUR_TVSERVICE" ]; then
+		echo "set $file tvservice to $state ..."
 
 		# append cmd
-		echo $cmd | sudo tee --append $file > /dev/null
+		echo "@reboot tvservice $state" >> $file
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "$file already sets $cmd"
+		echo "$file already sets tvservice $state"
 	fi
+}
+
+#-------------------------------------------------------------------------------
+
+dump_options()
+{
+	ROOT=$1
+
+	get_hostname
+	get_locale
+	get_timezone
+	get_keyboard
+	get_tvservice
+
+	echo -e "NEWHOST=\"$CUR_HOSTNAME\""
+	echo -e "TIMEZONE=\"$CUR_TIMEZONE\""
+	echo -e "LOCALE=\"$CUR_LOCALE\""
+	echo -e "KEYBOARD=\"$XKBMODEL $XKBLAYOUT\""
+	echo -e "TVSERVICE=\"$CUR_TVSERVICE\""
+
+	exit
+}
+
+#-------------------------------------------------------------------------------
+
+usage()
+{
+	echo
+    echo "usage: prep.sh [ -d <root> ] <raspbian img file> <block device to write image to>"
+	echo
+	show_avail_devices ""
+	exit 1
 }
 
 #-------------------------------------------------------------------------------
 # main
 
+# check for options
+verbose=0
+while getopts "hvd:" opt; do
+	case "$opt" in
+	h|\?)
+		usage
+		;;
+	v)  verbose=1
+		;;
+	d)  dump_options $OPTARG
+		;;
+	esac
+done
+
+# shift so that $@, $1, etc. refer to the non-option arguments
+shift "$((OPTIND-1))"
+
 if [ "$#" -ne 2 ]; then
-    echo "usage: prep.sh <raspbian img file> <block device to write image to>"
-	echo
-	show_avail_devices ""
-	exit 1
+	usage
 fi
 
 img=$1
 dev=$2
+
+if [ `id -u` -ne "0" ]; then
+	echo "must run as root"
+	exit 1
+fi
 
 if [ ! -f "$img" ]; then
 	echo "$img does not exist"
@@ -283,7 +384,7 @@ echo "Img size         : $imgsize MiB"
 echo "Target           : $dev"
 echo "/boot mount      : $BOOT : $BOOTNUM" 
 echo "/root mount      : $ROOT : $ROOTNUM $PARTSIZE"
-echo "Hostname         : $HOSTNAME"
+echo "Hostname         : $NEWHOST"
 echo "Locale           : $LOCALE"
 echo "Timezone         : $TIMEZONE"
 echo "Keyboard Layout  : $KEYBOARD"
@@ -319,12 +420,12 @@ fi
 config_count=0
 
 echo -e "\nflashing $img (${imgsize} MiB) ..."
-sudo dd if=$img status=progress of=$dev bs=1M
+dd if=$img status=progress of=$dev bs=1M
 
 do_resize $dev ${ROOTNUM} $PARTSIZE
 
 echo -e "\npartitions:"
-sudo parted $dev print free
+parted $dev print free
 
 # mount partitions
 if [ ! -d $BOOT ]; then
@@ -333,8 +434,8 @@ fi
 if [ ! -d $ROOT ]; then
 	mkdir --verbose $ROOT
 fi
-sudo mount --verbose --types vfat ${dev}${BOOTNUM} $BOOT --options rw,umask=0000
-sudo mount --verbose ${dev}${ROOTNUM} $ROOT --options rw
+mount --verbose --types vfat ${dev}${BOOTNUM} $BOOT --options rw,umask=0000
+mount --verbose ${dev}${ROOTNUM} $ROOT --options rw
 
 # config boot filesystem
 do_boot_cmdline
@@ -343,26 +444,27 @@ do_wifi "$WPACONFIG"
 do_scripts $BOOT/tools
 
 # config root filesystem
-do_hostname $NEWHOST
-do_timezone $TIMEZONE
-do_locale $LOCALE
-do_keyboard $KEYBOARD
-do_tvservice --off
+set_hostname $NEWHOST
+set_timezone $TIMEZONE
+set_locale $LOCALE
+set_keyboard $KEYBOARD
+set_tvservice $TVSERVICE
 
 # Show changed files
 echo -e "\nchanged $BOOT files:"
-sudo find $BOOT -mtime -1 | xargs ls -ld
+find $BOOT -mtime -1 | xargs ls -ld
 echo -e "\nchanged $ROOT files:"
-sudo find $ROOT -mtime -1 | xargs sudo ls -ld
+find $ROOT -mtime -1 | xargs ls -ld
 
 # unmount an clean up
 echo
-sudo umount --verbose $BOOT
-sudo umount --verbose $ROOT
+umount --verbose $BOOT
+umount --verbose $ROOT
 rm --recursive --force --verbose $BOOT $ROOT
 
 # make the local machine forget past versions
 echo -e "\nclean local keys"
-ssh-keygen -f "/home/pi/.ssh/known_hosts" -R "$NEWHOST"
+ssh-keygen -f "/home/$SUDO_USER/.ssh/known_hosts" -R "$NEWHOST"
+chown pi:users /home/$SUDO_USER/.ssh/known_hosts
 
 echo -e "\ndone"
