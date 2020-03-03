@@ -152,8 +152,8 @@ set_timezone()
 		echo "Set $file from $CUR_TIMEZONE to $tz ..."
 
 		echo $tz > $file
-		rm --force --verbose /etc/localtime
-		ln --symbolic --relative /usr/share/zoneinfo/$tz /etc/localtime
+		rm --force --verbose $ROOT/etc/localtime
+		ln --symbolic --verbose /usr/share/zoneinfo/$tz $ROOT/etc/localtime
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -290,6 +290,22 @@ set_tvservice()
 	else
 		echo "$file already sets tvservice $state"
 	fi
+}
+
+#-------------------------------------------------------------------------------
+
+clear_keys()
+{
+	host=$1
+	ip=`arp -a $host | cut -d'(' -f2 | cut -d')' -f1`
+
+	# make the local machine forget past versions
+	echo -e "\nclean local keys for $host"
+	ssh-keygen -f "/home/$SUDO_USER/.ssh/known_hosts" -R "$host"
+	ssh-keygen -f "/home/$SUDO_USER/.ssh/known_hosts" -R "$ip"
+
+	# reset permissions
+	chown pi:users /home/$SUDO_USER/.ssh/known_hosts
 }
 
 #-------------------------------------------------------------------------------
@@ -462,9 +478,6 @@ umount --verbose $BOOT
 umount --verbose $ROOT
 rm --recursive --force --verbose $BOOT $ROOT
 
-# make the local machine forget past versions
-echo -e "\nclean local keys"
-ssh-keygen -f "/home/$SUDO_USER/.ssh/known_hosts" -R "$NEWHOST"
-chown pi:users /home/$SUDO_USER/.ssh/known_hosts
+clear_keys $NEWHOST
 
 echo -e "\ndone"

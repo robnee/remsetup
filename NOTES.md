@@ -37,7 +37,7 @@ Boot
 
 ### /etc/hostname file:
 
-Add host name
+Add host name. todo: what does raspi-config do when changing locale?
 
 ### Append /boot/config.txt
 
@@ -88,7 +88,7 @@ Add host name
 	lirc_dev
 	lirc_rpi gpio_in_pin=23 gpio_out_pin=22
 
-### update /etc/lirc/hardware.conf 
+### update /etc/lirc/hardware.conf
 
 We are only sending IR commands.  we don't need to enable or config any of the IR receive services.  We also want the Lirc daemon  to listen for commands to send on its local port.
 
@@ -129,16 +129,157 @@ Much frustration can be avoided be rebooting before testing
 
 Fix bug in /etc/rsyslog.conf to no longer refer to xconsole to prevent annoying syslog errors for headless systems not running an X desktop.  This may no longer be necessary in Stretch onward.
 
+The parameters in /etc/modules for lirc_rpi seem to cause an error message in /var/log/syslog:
+
+	Mar 19 10:36:54 raspberrypi systemd-modules-load[89]: Inserted module 'lirc_dev'
+	Mar 19 10:36:54 raspberrypi systemd-modules-load[89]: Failed to find module 'lirc_rpi gpio_in_pin=23 gpio_out_pin=22'
+
+It's possible that since these options are now specified in the /boot/config.txt file that they aren't even necessary.  I excluded them on the zero and it seems to still work and the message goes away.
+
 So for the Pi Zero W the config options are as follows.  Since we aren't using the receiver don't list it. 
 
+/boot/config.txt:
 
-## Configure for low power:
+	# Uncomment this to enable the lirc-rpi module
+	dtoverlay=lirc-rpi
+	dtparam=gpio_out_pin=22
 
-#### Turn off HDMI
+ Edit to /etc/modules:
 
-	/usr/bin/tvservice -o (-p to re-enable). Add the line to /etc/rc.local to disable HDMI on boot.  prep.sh sets this.
+	lirc_dev
+	lirc_rpi
 
-#### Turn off LEDs
+### random send failures
+
+Seemingly at random irsend will stop working yet not complain.  The pin will work but irsend will stop sending.  A couple of people in various forums recommend adding the explicit socket command to the irsend command.  i.e.:
+
+	irsend -d /var/run/lirc/lircd send_once AA59 KEY_VOLUMEUP
+
+Todo: is this still an issue?
+
+
+## test IR receive
+
+	sudo /etc/init.d/lirc stop
+	mode2 -d /dev/lirc0
+
+
+## Create Lirc .conf file
+
+See projects/lirc for info on coding lircd.conf files.  It's also possible to create a file by recording IR commands.
+
+### Stop lirc to free up /dev/lirc0
+
+	sudo /etc/init.d/lirc stop
+
+### Create a new remote control configuration file (using irrecord) to ~/lircd.conf
+
+	irrecord -d /dev/lirc0 ~/lircd.conf
+
+### Make a backup of the original lircd.conf file
+
+	sudo mv /etc/lirc/lircd.conf /etc/lirc/lircd_original.conf
+
+### Copy over your new configuration file
+
+	sudo cp ~/lircd.conf /etc/lirc/lircd.conf
+
+### Start up lirc again
+
+	sudo /etc/init.d/lirc start
+	sudo service lirc start
+	sudo /etc/init.d/lirc status
+
+### list all commands
+
+Note the empty quoted string as placeholder for (required) key argument.
+
+	irsend list /home/pi/lircd.conf ""
+
+## Test IR Send
+
+	irsend send_once <device> <key>
+
+	$ irsend SEND_ONCE <device-name> KEY_POWER
+	$ irsend SEND_ONCE <device-name> KEY_VOLUMEUP
+
+## Config application
+
+	svn checkout svn://server/home/Shared/repository/projects
+
+
+# Setting up remote with stretch on a Raspberry Pi Zero W
+
+## Setting up the Raspbian SD card
+
+Download the current Lite version of Raspbian from https://www.raspberrypi.org/downloads.  The Lite version is smaller and does not include a desktop which is not needed for a headless box.  Copy the image to a micro SD card of at least 4GB.  You can't just copy it to the card.  You want to reimage the card itself using the Raspbian boot image.  There are instructions for WIndowns if you follow the links from the downloads page.
+
+For Linux use /proc/partitions and/or /dev to locate the device with the SD card,  If the card does not appear then try unplugging and replugging the card reader itself.
+
+	cat /proc/partitions
+	ls /dev
+	dd if=2017-09-07-raspbian-stretch-lite.img of=/dev/sdx bs=64K
+
+We need to add some files to the boot partition to permit Raspbian to boot headless and connect to the LAN wirelessly.  Windows should mount the first partition (which is formatted FAT) automatically.
+
+For Linux mount the drive for in RW mode:
+
+	sudo mount -t vfat /dev/sdx1 /mnt/disk -o rw,umask=0000
+
+Add two files.  An empty file named `ssh` and a file named `wpa_supplicant.conf` with the SSID and password of the wireless access point to connect to.  Be careful to not included spaces around the equals signs:
+
+	cd /mnt/disk
+	cat > wpa_supplicant.conf
+	network={
+	  ssid=
+	  psk=
+	}
+
+Unmount or eject the SD card.
+
+	cd /mnt
+	sudo umount /mnt/disk
+
+
+## First Boot
+
+### Scan for hosts
+
+	nmap -sP 192.168.1.* | grep scan
+
+ssh pi@raspberrypi
+
+Run:
+	/boot/tools/config.sh
+
+after reboot run it again to finish config
+
+	/boot/tools/config.sh
+
+get projects
+
+	cd ~
+	mkdir projects
+	cd projects
+	svn checkout svn+ssh://rnee@centos7/home/Shared/repository/projects/bottle
+	svn checkout svn+ssh://rnee@centos7/home/Shared/repository/projects/rnee
+	svn checkout svn+ssh://rnee@centos7/home/Shared/repository/projects/lirc
+
+Setup IR Remote applications
+
+	cd bottle
+	virtualenv venv
+	. venv/bin/activate
+	pip3 install -r requirements.txt
+
+
+#### Configure for low power:
+
+- Turn off HDMI
+
+	/usr/bin/tvservice -o (-p to re-enable). Add the line to /etc/rc.local to disable HDMI on boot.
+
+- Turn off LEDs
 
 If you want to turn off the LED on the Pi Zero completely, run the following two commands:
 
@@ -153,6 +294,45 @@ To make these settings permanent, add the following lines to your Pi's /boot/con
 	# Disable the ACT LED on the Pi Zero.
 	dtparam=act_led_trigger=none
 	dtparam=act_led_activelow=on
+
+06/24/2019
+
+GitHub gist: https://gist.githubusercontent.com/prasanthj/c15a5298eb682bde34961c322c95378b/raw/1c20ca90ab1ed8ef83b7839983dd740c38a00ffc/lirc-pi3.txt
+
+Notes to make IR shield (made by LinkSprite) work in Raspberry Pi 3 (bought from Amazon [1]). 
+The vendor has some documentation [2] but that is not complete and sufficient for Raspbian Stretch. 
+Following are the changes that I made to make it work.
+
+	$ sudo apt-get update
+	$ sudo apt-get install lirc
+
+### Update the following line in /boot/config.txt
+
+	dtoverlay=lirc-rpi,gpio_in_pin=18,gpio_out_pin=17
+
+### Add the following lines to /etc/modules file
+
+	lirc_dev
+	_rpi gpio_in_pin=18 gpio_out_pin=17
+
+
+### Add the following lines to /etc/lirc/hardware.conf file
+
+	LIRCD_ARGS="--uinput --listen"
+	LOAD_MODULES=true
+	DRIVER="default"
+	DEVICE="/dev/lirc0"
+	MODULES="lirc_rpi"
+
+### Update the following lines in /etc/lirc/lirc_options.conf
+
+	# todo: what does this do?
+	driver    = default
+	device    = /dev/lirc0
+
+	$ sudo /etc/init.d/lircd stop
+	$ sudo /etc/init.d/lircd start
+
 
 ## Notes on Lirc 0.10.1
 
@@ -183,8 +363,10 @@ After login you should have a lirc0 device and see something like:
 
 	rpi3 ~$ ls -l /dev/lirc0
 	crw-rw---- 1 root video 244, 0 2018-01-28 16:58 /dev/lirc0
-	rpi3 ~$ lsmod | grep gpio_ir
-	gpio_ir_tx             16384  0
+	rpi3 ~$ lsmod | grep lirc
+	lirc_rpi                9032  3
+	lirc_dev               10583  1 lirc_rpi
+	rc_core                24377  1 lirc_dev
 
 Check services with:
 
@@ -269,6 +451,3 @@ Params: gpio_pin                Output GPIO (default 18)
 [1] https://www.amazon.com/Infrared-Shield-for-Raspberry-Pi/dp/B00K2IICKK/ref=pd_sbs_328_1?_encoding=UTF8&psc=1&refRID=1QPY33VFCGETBJ17K8QE
 [2] http://learn.linksprite.com/raspberry-pi/shield/infrared-transceiver-on-raspberry-pi-lirc-software-installation-and-configuration/
 [3] https://www.hackster.io/nathansouthgate/control-rpi-from-alexa-b558ad
-
-
-### 02/29/2020 prep.sh and config.sh
