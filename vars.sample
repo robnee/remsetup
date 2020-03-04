@@ -5,18 +5,3 @@ TIMEZONE="America/New_York"
 KEYBOARD="pc101 us"
 TVSERVICE="--off"
 PARTSIZE="4096MiB"
-BOOTNUM="1"
-ROOTNUM="2"
-WPACONFIG=$(cat << END
-network={
-	ssid=""
-	psk=""
-	key_mgmt=WPA-PSK
-}
-network={
-	ssid=""
-	psk=""
-	key_mgmt=WPA-PSK
-}
-END
-)

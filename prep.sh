@@ -15,6 +15,7 @@ ROOT=/tmp/root
 
 SCRIPTDIR=$(dirname $0)
 CONFIGFILE=./vars
+WPAFILE=./wpa_supplicant.conf
 
 #-------------------------------------------------------------------------------
 
@@ -27,24 +28,70 @@ show_avail_devices()
 
 #-------------------------------------------------------------------------------
 
-do_resize()
+show_changes()
+{
+	local path=$1
+
+	echo -e "\nchanged $path files:"
+	find $path -mtime -1 | xargs ls -ld
+}
+
+#-------------------------------------------------------------------------------
+
+resize_rootfs()
 {
 	local dev=$1
-	local num=$2
-	local size=$3
+	local size=$2
 
-	echo -e "\nresize root filesystem (${dev}${num} $size ..."
+	local label='rootfs'
+	local part_num=2
 
-	# use losetup to create a block dev out of img and then lsblk to get size
-	# of part and size of /dev/sda2 to see if sizes are different
+	# reread partition table
+	partprobe ${dev}2
 
-	# resize the main partition
-	parted $dev resizepart $num $size
+	# confirm partition number
+	if [ `lsblk --noheading --output LABEL ${dev}${part_num}` = "$label" ]; then
+		echo -e "\nresize root filesystem (${dev}${part_num} $size) ..."
 
-	e2fsck -f ${dev}${num}
-	resize2fs ${dev}${num}
+		# resize the main partition
+		parted $dev resizepart $part_num $size
 
-	config_count=$(( $config_count + 1 ))
+		e2fsck -f ${dev}${part_num}
+		resize2fs ${dev}${part_num}
+
+		config_count=$(( $config_count + 1 ))
+	else
+		echo -e "${dev}${part_num} does not appear to be $label"
+		exit 1
+	fi
+}
+
+#-------------------------------------------------------------------------------
+
+mount_partitions()
+{
+	local dev=$1
+	local boot=$2
+	local root=$3
+
+	if [ ! -d $boot ]; then
+		mkdir --verbose $boot
+	fi
+	if [ ! -d $root ]; then
+		mkdir --verbose $root
+	fi
+
+	# confirm partition number
+	if [ `lsblk --noheading --output LABEL ${dev}1` = "boot" ]; then
+		local bootfs=${dev}1
+		local rootfs=${dev}2
+	else
+		local bootfs=${dev}2
+		local rootfs=${dev}1
+	fi
+
+	mount --verbose --types vfat $bootfs $boot --options rw,umask=0000
+	mount --verbose $rootfs $root --options rw
 }
 
 #-------------------------------------------------------------------------------
@@ -90,26 +137,22 @@ do_ssh()
 
 do_wifi()
 {
-	local wpaconfig="$1"
+	local wpafile=$1
 
 	local file=$BOOT/wpa_supplicant.conf
 
-	if [ ! -f "$file" ]; then
-		echo -e "Set $file with credentials ..."
+	if [ ! -f $wpafile ]; then
+		if [ ! -f $file ]; then
+			echo -e "copy $wpafile to $file ..."
 
-		# Config and enable wifi.  Note: no spaces to either side of equals sign
-		cat > $file <<-WPA
-		country=US
-		ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-		update_config=1
-		WPA
+			cp --verbose --force $wpafile $file
 
-		# add the user settings (credentials)
-		echo "$wpaconfig" >> $file
-
-		config_count=$(( $config_count + 1 ))
+			config_count=$(( $config_count + 1 ))
+		else
+			echo "$file already configured"
+		fi
 	else
-		echo "$file already configured"
+		echo "\nWARNING: no $wpafile found wifi will not connect on boot\n"
 	fi
 }
 
@@ -297,12 +340,14 @@ set_tvservice()
 clear_keys()
 {
 	host=$1
-	ip=`arp -a $host | cut -d'(' -f2 | cut -d')' -f1`
 
 	# make the local machine forget past versions
 	echo -e "\nclean local keys for $host"
 	ssh-keygen -f "/home/$SUDO_USER/.ssh/known_hosts" -R "$host"
-	ssh-keygen -f "/home/$SUDO_USER/.ssh/known_hosts" -R "$ip"
+
+	# try to forget by ip address too (only works if host is up)
+	# ip=`arp -a $host | cut -d'(' -f2 | cut -d')' -f1`
+	# ssh-keygen -f "/home/$SUDO_USER/.ssh/known_hosts" -R "$ip"
 
 	# reset permissions
 	chown pi:users /home/$SUDO_USER/.ssh/known_hosts
@@ -398,8 +443,8 @@ echo "--------------------------------------------------------------------------
 echo "Img file         : $img"
 echo "Img size         : $imgsize MiB"
 echo "Target           : $dev"
-echo "/boot mount      : $BOOT : $BOOTNUM" 
-echo "/root mount      : $ROOT : $ROOTNUM $PARTSIZE"
+echo "Boot mount       : $BOOT" 
+echo "Root mount       : $ROOT : $PARTSIZE"
 echo "Hostname         : $NEWHOST"
 echo "Locale           : $LOCALE"
 echo "Timezone         : $TIMEZONE"
@@ -438,25 +483,17 @@ config_count=0
 echo -e "\nflashing $img (${imgsize} MiB) ..."
 dd if=$img status=progress of=$dev bs=1M
 
-do_resize $dev ${ROOTNUM} $PARTSIZE
+resize_rootfs $dev $PARTSIZE
 
 echo -e "\npartitions:"
 parted $dev print free
 
-# mount partitions
-if [ ! -d $BOOT ]; then
-	mkdir --verbose $BOOT
-fi
-if [ ! -d $ROOT ]; then
-	mkdir --verbose $ROOT
-fi
-mount --verbose --types vfat ${dev}${BOOTNUM} $BOOT --options rw,umask=0000
-mount --verbose ${dev}${ROOTNUM} $ROOT --options rw
+mount_partitions $dev $BOOT $ROOT
 
 # config boot filesystem
 do_boot_cmdline
 do_ssh $SSH
-do_wifi "$WPACONFIG"
+do_wifi $WPAFILE
 do_scripts $BOOT/tools
 
 # config root filesystem
@@ -467,12 +504,9 @@ set_keyboard $KEYBOARD
 set_tvservice $TVSERVICE
 
 # Show changed files
-echo -e "\nchanged $BOOT files:"
-find $BOOT -mtime -1 | xargs ls -ld
-echo -e "\nchanged $ROOT files:"
-find $ROOT -mtime -1 | xargs ls -ld
+show_changes $BOOT
+show_changes $ROOT
 
-# unmount an clean up
 echo
 umount --verbose $BOOT
 umount --verbose $ROOT
