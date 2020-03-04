@@ -14,7 +14,6 @@ BOOT=/tmp/boot
 ROOT=/tmp/root
 
 SCRIPTDIR=$(dirname $0)
-CONFIGFILE=./vars
 WPAFILE=./wpa_supplicant.conf
 
 #-------------------------------------------------------------------------------
@@ -96,7 +95,7 @@ mount_partitions()
 
 #-------------------------------------------------------------------------------
 
-do_boot_cmdline()
+do_disable_resize()
 {
 	local file=$BOOT/cmdline.txt
 
@@ -110,7 +109,32 @@ do_boot_cmdline()
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "$file already configured"
+		echo "$file already configured to disable init_resize"
+	fi
+}
+
+#-------------------------------------------------------------------------------
+
+do_boot_config()
+{
+	local memk=$1
+
+	local file=/boot/config.txt
+
+	grep --no-messages "gpu_mem=$memk" $file
+	if [ "$?" -ne "0" ]; then
+		echo "update $file to gpu_mem=$memk ..."
+
+		cp -f $file $file.orig
+		cat >> $file <<-EOF
+
+			# set memory used by gpu (prep.sh)
+			gpu_mem=$memk
+		EOF
+
+		config_count=$(( $config_count + 1 ))
+	else
+		echo "$file already configured gpu_mem=$memk"
 	fi
 }
 
@@ -365,7 +389,7 @@ dump_options()
 	get_keyboard
 	get_tvservice
 
-	echo -e "NEWHOST=\"$CUR_HOSTNAME\""
+	echo -e "NEWHOSTNAME=\"$CUR_HOSTNAME\""
 	echo -e "TIMEZONE=\"$CUR_TIMEZONE\""
 	echo -e "LOCALE=\"$CUR_LOCALE\""
 	echo -e "KEYBOARD=\"$XKBMODEL $XKBLAYOUT\""
@@ -379,7 +403,7 @@ dump_options()
 usage()
 {
 	echo
-    echo "usage: prep.sh [ -d <root> ] <raspbian img file> <block device to write image to>"
+	echo "usage: prep.sh [ -d <root> ] <raspbian img file> <block device to write image to>"
 	echo
 	show_avail_devices ""
 	exit 1
@@ -388,9 +412,12 @@ usage()
 #-------------------------------------------------------------------------------
 # main
 
-# check for options
+# option defaults
 verbose=0
-while getopts "hvd:" opt; do
+config_file=./vars
+
+# check for options
+while getopts "hvd:c:" opt; do
 	case "$opt" in
 	h|\?)
 		usage
@@ -398,6 +425,8 @@ while getopts "hvd:" opt; do
 	v)  verbose=1
 		;;
 	d)  dump_options $OPTARG
+		;;
+	c)	confile_file=$OPTARG
 		;;
 	esac
 done
@@ -427,12 +456,22 @@ if [ ! -e "$dev" ]; then
 	exit 1
 fi
 
-if [ ! -f $CONFIGFILE ]; then
-	echo "$CONFIGFILE does not exist"
+if [ ! -f $config_file ]; then
+	echo "$config_file does not exist"
 	exit 1
 fi
 
-. $CONFIGFILE
+# Config option defaults
+NEWHOSTNAME=raspberrypi
+GPUMEM=64
+SSH=on
+TIMEZONE=$(</etc/timezone)
+LOCALE="C.UTF-8"
+KEYBOARD="pc101 us"
+TVSERVICE="--off"
+PARTSIZE=""
+
+. $config_file
 
 disk=`basename $dev`
 imgsize=`du --block-size=1M $img | cut -f1`
@@ -445,11 +484,12 @@ echo "Img size         : $imgsize MiB"
 echo "Target           : $dev"
 echo "Boot mount       : $BOOT" 
 echo "Root mount       : $ROOT : $PARTSIZE"
-echo "Hostname         : $NEWHOST"
+echo "Hostname         : $NEWHOSTNAME"
 echo "Locale           : $LOCALE"
 echo "Timezone         : $TIMEZONE"
 echo "Keyboard Layout  : $KEYBOARD"
 echo "SSH              : $SSH"
+echo "GPU Memory       : $GPUMEM"
 echo
 show_avail_devices $dev
 
@@ -461,8 +501,8 @@ fi
 
 # Ensure dev not already mounted
 if [ `grep --count $dev /proc/mounts` -gt 0 ]; then
-    echo -e "\n$dev is already mounted"
-    exit 1
+	echo -e "\n$dev is already mounted"
+	exit 1
 fi
 
 # make sure the mount directories are available
@@ -483,7 +523,9 @@ config_count=0
 echo -e "\nflashing $img (${imgsize} MiB) ..."
 dd if=$img status=progress of=$dev bs=1M
 
-resize_rootfs $dev $PARTSIZE
+if [ "$PARTSIZE" != "" ]; then
+	resize_rootfs $dev $PARTSIZE
+fi
 
 echo -e "\npartitions:"
 parted $dev print free
@@ -491,13 +533,17 @@ parted $dev print free
 mount_partitions $dev $BOOT $ROOT
 
 # config boot filesystem
-do_boot_cmdline
+do_boot_config $GPUMEM
 do_ssh $SSH
 do_wifi $WPAFILE
 do_scripts $BOOT/tools
 
+if [ "$PARTSIZE" != "" ]; then
+	do_disable_resize
+fi
+
 # config root filesystem
-set_hostname $NEWHOST
+set_hostname $NEWHOSTNAME
 set_timezone $TIMEZONE
 set_locale $LOCALE
 set_keyboard $KEYBOARD
@@ -512,6 +558,6 @@ umount --verbose $BOOT
 umount --verbose $ROOT
 rm --recursive --force --verbose $BOOT $ROOT
 
-clear_keys $NEWHOST
+clear_keys $NEWHOSTNAME
 
 echo -e "\ndone"
