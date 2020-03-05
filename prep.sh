@@ -49,7 +49,7 @@ resize_rootfs()
 	partprobe ${dev}2
 
 	# confirm partition number
-	if [ `lsblk --noheading --output LABEL ${dev}${part_num}` = "$label" ]; then
+	if [ "`lsblk --noheading --output LABEL ${dev}${part_num}`" = "$label" ]; then
 		echo -e "\nresize root filesystem (${dev}${part_num} $size) ..."
 
 		# resize the main partition
@@ -62,6 +62,25 @@ resize_rootfs()
 	else
 		echo -e "${dev}${part_num} does not appear to be $label"
 		exit 1
+	fi
+}
+
+#-------------------------------------------------------------------------------
+
+do_disable_resize()
+{
+	local file=$BOOT/cmdline.txt
+
+	# Check for and disable init_resize script
+	grep --quiet --no-messages "init_resize" $file
+	if [ $? -eq 0 ]; then
+		echo -e "\nupdate $file to remove init_resize.sh ..."
+
+		sed --in-place=.orig s/init=.*init_resize.sh// $file
+
+		config_count=$(( $config_count + 1 ))
+	else
+		echo "$file already configured to disable init_resize"
 	fi
 }
 
@@ -95,37 +114,18 @@ mount_partitions()
 
 #-------------------------------------------------------------------------------
 
-do_disable_resize()
-{
-	local file=$BOOT/cmdline.txt
-
-	# Check for and disable init_resize script
-	grep --no-messages "init_resize" $file
-	if [ $? -eq 0 ]; then
-		echo -e "\nupdate $file to remove init_resize.sh ..."
-
-		cp -f $file $file.orig
-		sed s/init=.*init_resize.sh// $file | tee $file
-
-		config_count=$(( $config_count + 1 ))
-	else
-		echo "$file already configured to disable init_resize"
-	fi
-}
-
-#-------------------------------------------------------------------------------
-
 do_boot_config()
 {
 	local memk=$1
 
-	local file=/boot/config.txt
+	local file=$BOOT/config.txt
 
-	grep --no-messages "gpu_mem=$memk" $file
+	grep --quiet --no-messages "gpu_mem=$memk" $file
 	if [ "$?" -ne "0" ]; then
 		echo "update $file to gpu_mem=$memk ..."
 
-		cp -f $file $file.orig
+		# append to file
+		cp --no-clobber $file $file.orig
 		cat >> $file <<-EOF
 
 			# set memory used by gpu (prep.sh)
@@ -135,6 +135,34 @@ do_boot_config()
 		config_count=$(( $config_count + 1 ))
 	else
 		echo "$file already configured gpu_mem=$memk"
+	fi
+}
+
+#-------------------------------------------------------------------------------
+
+do_bluetooth()
+{
+	local bt=$1
+
+	local file=$BOOT/config.txt
+	local off_cmd="dtoverlay=pi3-disable-bt"
+
+	# if the command isn't present and off is requested
+	grep --quiet --no-messages "$off_cmd" $file
+	if [ "$?" -ne "0" ] && [ $bt == "off" ]; then
+		echo "update $file to $off_cmd ..."
+
+		# append to file
+		cp --no-clobber --verbose $file $file.orig
+		cat >> $file <<-EOF
+
+			# disable bluetooth
+			$off_cmd
+		EOF
+
+		config_count=$(( $config_count + 1 ))
+	else
+		echo "$file already configured $off_cmd"
 	fi
 }
 
@@ -165,7 +193,7 @@ do_wifi()
 
 	local file=$BOOT/wpa_supplicant.conf
 
-	if [ ! -f $wpafile ]; then
+	if [ -f $wpafile ]; then
 		if [ ! -f $file ]; then
 			echo -e "copy $wpafile to $file ..."
 
@@ -177,25 +205,6 @@ do_wifi()
 		fi
 	else
 		echo "\nWARNING: no $wpafile found wifi will not connect on boot\n"
-	fi
-}
-
-#-------------------------------------------------------------------------------
-
-do_scripts()
-{
-	local file=$1
-
-	if [ ! -d "$file" ]; then
-		echo -e "copy scripts to $file ..."
-
-		# copy over config tools
-		mkdir --verbose $file
-		cp README.md config.sh prep.sh $file
-
-		config_count=$(( $config_count + 1 ))
-	else
-		echo "$file already configured"
 	fi
 }
 
@@ -250,7 +259,7 @@ set_hostname()
 
 		echo $new_hostname > $file
 
-		sed s/$CUR_HOSTNAME/$new_hostname/g $hosts > $hosts
+		sed --in-place=.orig s/$CUR_HOSTNAME/$new_hostname/g $hosts
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -305,7 +314,7 @@ set_keyboard()
 	if [ "$model" != "$XKBMODEL" ] || [ "$layout" != "$XKBLAYOUT" ]; then
 		echo "set $file from $XKBMODEL $XKBLAYOUT to $model $layout ..."
 
-		cp -f $file $file.orig
+		cp --no-clobber $file $file.orig
 		cat <<-EOF > $file
 		# IR Remote Settings
 		XKBMODEL="$model"
@@ -356,6 +365,25 @@ set_tvservice()
 		config_count=$(( $config_count + 1 ))
 	else
 		echo "$file already sets tvservice $state"
+	fi
+}
+
+#-------------------------------------------------------------------------------
+
+do_scripts()
+{
+	local file=$1
+
+	if [ ! -d "$file" ]; then
+		echo -e "copy scripts to $file ..."
+
+		# copy over config tools
+		mkdir --verbose $file
+		cp README.md config.sh prep.sh lirc.sh $file
+
+		config_count=$(( $config_count + 1 ))
+	else
+		echo "$file already configured"
 	fi
 }
 
@@ -465,6 +493,7 @@ fi
 NEWHOSTNAME=raspberrypi
 GPUMEM=64
 SSH=on
+BLUETOOTH=on
 TIMEZONE=$(</etc/timezone)
 LOCALE="C.UTF-8"
 KEYBOARD="pc101 us"
@@ -488,6 +517,7 @@ echo "Hostname         : $NEWHOSTNAME"
 echo "Locale           : $LOCALE"
 echo "Timezone         : $TIMEZONE"
 echo "Keyboard Layout  : $KEYBOARD"
+echo "Bluetooth        : $BLUETOOTH"
 echo "SSH              : $SSH"
 echo "GPU Memory       : $GPUMEM"
 echo
@@ -532,11 +562,14 @@ parted $dev print free
 
 mount_partitions $dev $BOOT $ROOT
 
+echo
+echo config...
+
 # config boot filesystem
 do_boot_config $GPUMEM
 do_ssh $SSH
 do_wifi $WPAFILE
-do_scripts $BOOT/tools
+do_bluetooth $BLUETOOTH
 
 if [ "$PARTSIZE" != "" ]; then
 	do_disable_resize
@@ -548,6 +581,9 @@ set_timezone $TIMEZONE
 set_locale $LOCALE
 set_keyboard $KEYBOARD
 set_tvservice $TVSERVICE
+
+# copy over tools
+do_scripts $BOOT/tools
 
 # Show changed files
 show_changes $BOOT
