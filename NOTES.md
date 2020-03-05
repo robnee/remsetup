@@ -37,7 +37,7 @@ Boot
 
 ### /etc/hostname file:
 
-Add host name. todo: what does raspi-config do when changing locale?
+Add host name
 
 ### Append /boot/config.txt
 
@@ -88,7 +88,7 @@ Add host name. todo: what does raspi-config do when changing locale?
 	lirc_dev
 	lirc_rpi gpio_in_pin=23 gpio_out_pin=22
 
-### update /etc/lirc/hardware.conf
+### update /etc/lirc/hardware.conf 
 
 We are only sending IR commands.  we don't need to enable or config any of the IR receive services.  We also want the Lirc daemon  to listen for commands to send on its local port.
 
@@ -190,11 +190,11 @@ See projects/lirc for info on coding lircd.conf files.  It's also possible to cr
 	sudo service lirc start
 	sudo /etc/init.d/lirc status
 
-### list all commands
+### list all devices and commands
 
 Note the empty quoted string as placeholder for (required) key argument.
 
-	irsend list /home/pi/lircd.conf ""
+	irsend list "" ""
 
 ## Test IR Send
 
@@ -297,6 +297,8 @@ To make these settings permanent, add the following lines to your Pi's /boot/con
 
 06/24/2019
 
+NOTE: (02/2020) this is no loger relevent for Stretch onward and Lirc 0.10+
+
 GitHub gist: https://gist.githubusercontent.com/prasanthj/c15a5298eb682bde34961c322c95378b/raw/1c20ca90ab1ed8ef83b7839983dd740c38a00ffc/lirc-pi3.txt
 
 Notes to make IR shield (made by LinkSprite) work in Raspberry Pi 3 (bought from Amazon [1]). 
@@ -306,17 +308,17 @@ Following are the changes that I made to make it work.
 	$ sudo apt-get update
 	$ sudo apt-get install lirc
 
-### Update the following line in /boot/config.txt
+### Update the following line in /boot/config.txt (DEFUNCT)
 
 	dtoverlay=lirc-rpi,gpio_in_pin=18,gpio_out_pin=17
 
-### Add the following lines to /etc/modules file
+### Add the following lines to /etc/modules file (DEFUNCT)
 
 	lirc_dev
 	_rpi gpio_in_pin=18 gpio_out_pin=17
 
 
-### Add the following lines to /etc/lirc/hardware.conf file
+### Add the following lines to /etc/lirc/hardware.conf file (DEFUNCT)
 
 	LIRCD_ARGS="--uinput --listen"
 	LOAD_MODULES=true
@@ -451,3 +453,29 @@ Params: gpio_pin                Output GPIO (default 18)
 [1] https://www.amazon.com/Infrared-Shield-for-Raspberry-Pi/dp/B00K2IICKK/ref=pd_sbs_328_1?_encoding=UTF8&psc=1&refRID=1QPY33VFCGETBJ17K8QE
 [2] http://learn.linksprite.com/raspberry-pi/shield/infrared-transceiver-on-raspberry-pi-lirc-software-installation-and-configuration/
 [3] https://www.hackster.io/nathansouthgate/control-rpi-from-alexa-b558ad
+
+
+### 02/29/2020 prep.sh and config.sh
+
+prep.sh now does most of the standard config itself before first boot.  config.sh is used to patch the system and config lirc
+
+Confirm settings:
+
+	iw reg get
+
+Additional tasks:
+
+- change password
+- change gid of pi user to 100
+- rename lircd.conf.dist to lircd.conf <- this file runs everything in lircd.conf.d
+- rename devinput.conf devinput.conf.dist
+
+
+Forget known_hosts both by name and ip:
+
+ssh-keygen -f "/home/pi/.ssh/known_hosts" -R raspberrypi
+ssh-keygen -f "/home/pi/.ssh/known_hosts" -R 192.168.1.10
+
+--------------------------------------------------------------------------------
+
+# Defunct Info

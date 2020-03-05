@@ -76,6 +76,9 @@ Add host name
 	sudo apt-get -y install lirc
 	sudo apt-get -y install git
 
+### Confirm settings
+
+	iw reg get
 
 ## Lirc Setup
 

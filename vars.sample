@@ -1,5 +1,6 @@
-NEWHOST="raspberrypi"
+NEWHOSTNAME="raspberrypi"
 SSH=on
+BLUETOOTH=off
 LOCALE="C.UTF-8"
 TIMEZONE="America/New_York"
 KEYBOARD="pc101 us"
