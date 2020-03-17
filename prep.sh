@@ -302,13 +302,14 @@ set_keyboard()
 {
 	local model=$1
 	local layout=$2
+	local options=$3
 
 	local file=$ROOT/etc/default/keyboard
 
 	get_keyboard
 
-	if [ "$model" != "$XKBMODEL" ] || [ "$layout" != "$XKBLAYOUT" ]; then
-		echo "set $file from $XKBMODEL $XKBLAYOUT to $model $layout ..."
+	if [ "$model" != "$XKBMODEL" ] || [ "$layout" != "$XKBLAYOUT" ] || [ "$options" != "$XKBOPTIONS" ]; then
+		echo "set $file from $XKBMODEL $XKBLAYOUT to $model $layout $options ..."
 
 		cp --no-clobber $file $file.orig
 		cat <<-EOF > $file
@@ -316,14 +317,14 @@ set_keyboard()
 		XKBMODEL="$model"
 		XKBLAYOUT="$layout"
 		XKBVARIANT=""
-		XKBOPTIONS=""
+		XKBOPTIONS="$options"
 
 		BACKSPACE="guess"
 		EOF
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "$file already set to $1 $2"
+		echo "$file already set to $model $layout $options"
 	fi
 }
 
@@ -415,7 +416,9 @@ dump_options()
 	echo -e "NEWHOSTNAME=\"$CUR_HOSTNAME\""
 	echo -e "TIMEZONE=\"$CUR_TIMEZONE\""
 	echo -e "LOCALE=\"$CUR_LOCALE\""
-	echo -e "KEYBOARD=\"$XKBMODEL $XKBLAYOUT\""
+	echo -e "KEYMODEL=\"$XKBMODEL\""
+	echo -e "KEYLAYOUT=\"$XKBLAYOUT\""
+	echo -e "KEYOPTIONS=\"$XKBOPTIONS\""
 
 	exit
 }
@@ -488,7 +491,9 @@ NEWHOSTNAME=raspberrypi
 SSH=on
 TIMEZONE=$(</etc/timezone)
 LOCALE="C.UTF-8"
-KEYBOARD="pc101 us"
+KEYMODEL="pc101"
+KEYLAYOUT="us"
+KEYOPTIONS=""
 HDMI=""
 BLUETOOTH=""
 WIFIPOWERSAVE=""
@@ -511,7 +516,7 @@ echo "Root mount       : $ROOT : $ROOTSIZE"
 echo "Hostname         : $NEWHOSTNAME"
 echo "Locale           : $LOCALE"
 echo "Timezone         : $TIMEZONE"
-echo "Keyboard Layout  : $KEYBOARD"
+echo "Keyboard         : $KEYMODEL $KEYLAYOUT $KEYOPTIONS"
 echo "SSH              : $SSH"
 echo "GPU Memory       : $GPUMEM"
 echo "WiFi Power Save  : $WIFIPOWERSAVE"
@@ -583,7 +588,7 @@ fi
 set_hostname $NEWHOSTNAME
 set_timezone $TIMEZONE
 set_locale $LOCALE
-set_keyboard $KEYBOARD
+set_keyboard "$KEYMODEL" "$KEYLAYOUT" "$KEYOPTIONS"
 if [ "$HDMI" = "off" ]; then
 	add_startup "disablehdmi" "Disable HDMI output" "/usr/bin/tvservice --off"
 fi
