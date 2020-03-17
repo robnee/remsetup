@@ -23,7 +23,7 @@ do_boot_config()
 {
 	local file=/boot/config.txt
 
-	grep --no-messages "dtoverlay=gpio-ir-tx" $file
+	grep --no-messages "^dtoverlay=gpio-ir-tx" $file
 	if [ "$?" -ne "0" ]; then
 		echo "update $file dtoverlay=gpio-ir-tx ..."
 
@@ -208,7 +208,7 @@ do_lirc_hardware()
 
 SCRIPTDIR=$(dirname $0)
 LIRCPORT=8765
-LIRCPIN=22  # Pin #17 is the standard IR send pin
+LIRCPIN=17  # Pin #17 is the standard IR send pin
 UNAME=$(uname -a)
 
 if [ `id -u` -ne "0" ]; then
