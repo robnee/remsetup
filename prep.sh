@@ -98,7 +98,7 @@ mount_partitions()
 add_boot_cmdline()
 {
 	local string=$1
-	local new_+cmd=$(echo $string | cut -f1 -d'=')
+	local new_cmd=$(echo $string | cut -f1 -d'=')
 
 	local file=$BOOT/cmdline.txt
 
@@ -124,9 +124,8 @@ add_boot_cmdline()
 			fi
 		done
 
-		# todo: make this work
-		cat $file
-		echo $cmdline
+		cp --no-clobber -$file $file.orig
+		echo $cmdline > $file
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -219,7 +218,10 @@ set_timezone()
 	if [ "$tz" != "$CUR_TIMEZONE" ]; then
 		echo "Set $file from $CUR_TIMEZONE to $tz ..."
 
+		cp --no-clobber $file $file.orig
 		echo $tz > $file
+
+		mv --no-clobber --verbose $ROOT/etc/localtime $ROOT/etc/localtime.orig
 		rm --force --verbose $ROOT/etc/localtime
 		ln --symbolic --verbose /usr/share/zoneinfo/$tz $ROOT/etc/localtime
 
@@ -249,6 +251,7 @@ set_hostname()
 	if [ "$new_hostname" != "$CUR_HOSTNAME" ]; then
 		echo "Set hostname from $CUR_HOSTNAME to $new_hostname ..."
 
+		cp --no-clobber $file $file.orig
 		echo $new_hostname > $file
 
 		sed --in-place=.orig s/$CUR_HOSTNAME/$new_hostname/g $hosts
@@ -278,6 +281,7 @@ set_locale()
 	if [ "$locale" != "$CUR_LOCALE" ]; then
 		echo "Set $file from $CUR_LOCALE to $locale ..."
 
+		cp --no-clobber $file $file.orig
 		echo LANG=$locale > $file
 
 		config_count=$(( $config_count + 1 ))
@@ -328,8 +332,8 @@ set_keyboard()
 add_startup()
 {
 	local name=$1
-	local start=$2
-	local desc=$3
+	local desc=$2
+	local start=$(echo $3 | sed -e 's/\s*;\s*/\nExecStart=/g')
 
 	local service=/etc/systemd/system/${name}.service
 	local wants="multi-user.target"
@@ -342,6 +346,8 @@ add_startup()
 		Description=$desc
 
 		[Service]
+		Type=oneshot
+		RemainAfterExit=True
 		ExecStart=$start
 
 		[Install]
@@ -350,11 +356,11 @@ add_startup()
 
 		ln --symbolic --verbose $service $ROOT/etc/systemd/system/${wants}.wants
 
-		echo "service $name $file $start ..."
+		echo "service $name $file ..."
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "service $file already exists"
+		echo "service $name $file already exists"
 	fi
 }
 
@@ -579,10 +585,10 @@ set_timezone $TIMEZONE
 set_locale $LOCALE
 set_keyboard $KEYBOARD
 if [ "$HDMI" = "off" ]; then
-	add_startup "disablehdmi" "/usr/bin/tvservice --off" "Disable HDMI with tvservice command"
+	add_startup "disablehdmi" "Disable HDMI output" "/usr/bin/tvservice --off"
 fi
 if [ "$WIFIPOWERSAVE" = "off" ]; then
-	add_startup "wifipowersave" "Disable WiFi power saving with iw command" "/sbin/iw dev wlan0 set power_save off"
+	add_startup "wifipowersave" "Disable WiFi power saving" "/sbin/iw dev wlan0 set power_save off;/sbin/iw dev wlan0 get power_save"
 fi
 
 # copy over tools
