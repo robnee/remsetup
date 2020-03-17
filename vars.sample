@@ -1,8 +1,12 @@
 NEWHOSTNAME="raspberrypi"
 SSH=on
-BLUETOOTH=off
 LOCALE="C.UTF-8"
 TIMEZONE="America/New_York"
 KEYBOARD="pc101 us"
-TVSERVICE="--off"
-PARTSIZE="4096MiB"
+
+# additional options
+#ROOTSIZE="4096MiB"
+#HDMI=off
+#WIFIPOWERSAVE=off
+#BLUETOOTH=off
+#GPUMEM=16

@@ -67,25 +67,6 @@ resize_rootfs()
 
 #-------------------------------------------------------------------------------
 
-do_disable_resize()
-{
-	local file=$BOOT/cmdline.txt
-
-	# Check for and disable init_resize script
-	grep --quiet --no-messages "init_resize" $file
-	if [ $? -eq 0 ]; then
-		echo -e "\nupdate $file to remove init_resize.sh ..."
-
-		sed --in-place=.orig s/init=.*init_resize.sh// $file
-
-		config_count=$(( $config_count + 1 ))
-	else
-		echo "$file already configured to disable init_resize"
-	fi
-}
-
-#-------------------------------------------------------------------------------
-
 mount_partitions()
 {
 	local dev=$1
@@ -114,97 +95,108 @@ mount_partitions()
 
 #-------------------------------------------------------------------------------
 
-do_boot_config()
+add_boot_cmdline()
 {
-	local memk=$1
+	local string=$1
+	local new_+cmd=$(echo $string | cut -f1 -d'=')
+
+	local file=$BOOT/cmdline.txt
+
+	# Check if new_cmd already present
+	grep --quiet --no-messages "$cmd" $file
+	if [ $? -eq 0 ]; then
+		echo -e "\nupdate $file to add $new_cmd ..."
+
+		# rebuild the cmdline in order to handle a changed command
+		local cmdline=""
+		for arg in $(<$file)
+		do
+			local name=$(echo $arg | cut -f1 -d'=')
+			local value=""
+			if [ "$name" != "$arg" ]; then
+				value="=$(echo $arg | cut -f2 -d'=')"
+			fi
+
+			if [ "$name" = "$new_cmd" ]; then
+				cmdline="$cmdline $string"
+			else
+				cmdline="$cmdline $name$value"
+			fi
+		done
+
+		# todo: make this work
+		cat $file
+		echo $cmdline
+
+		config_count=$(( $config_count + 1 ))
+	else
+		echo "$file already configured to with $cmd"
+	fi
+}
+
+#-------------------------------------------------------------------------------
+
+del_boot_cmdline()
+{
+	local pattern=$1
+
+	local file=$BOOT/cmdline.txt
+
+	# Check for and delete a command
+	local match=`grep --only-matching --no-messages "$pattern" $file`
+	if [ $? -eq 0 ]; then
+		echo -e "\nupdate $file to remove $match ..."
+
+		cp --no-clobber $file $file.orig
+		sed --in-place=.orig s/$pattern// $file
+
+		config_count=$(( $config_count + 1 ))
+	else
+		echo "$file already configured to disable $pattern"
+	fi
+}
+
+#-------------------------------------------------------------------------------
+
+add_boot_config()
+{
+	local param=$1
 
 	local file=$BOOT/config.txt
 
-	grep --quiet --no-messages "gpu_mem=$memk" $file
+	grep --quiet --no-messages "$param" $file
 	if [ "$?" -ne "0" ]; then
-		echo "update $file to gpu_mem=$memk ..."
+		echo "update $file to $param ..."
 
 		# append to file
 		cp --no-clobber $file $file.orig
 		cat >> $file <<-EOF
 
-			# set memory used by gpu (prep.sh)
-			gpu_mem=$memk
+			# set by prep.sh
+			$param
 		EOF
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "$file already configured gpu_mem=$memk"
+		echo "$file already configured $param"
 	fi
 }
 
 #-------------------------------------------------------------------------------
 
-do_bluetooth()
+copy_boot_file()
 {
-	local bt=$1
+	local data=$1
+	local file=$BOOT/$2
 
-	local file=$BOOT/config.txt
-	local off_cmd="dtoverlay=pi3-disable-bt"
+	if [ ! -e "$file" ]; then
+		echo -e "create $file ..."
 
-	# if the command isn't present and off is requested
-	grep --quiet --no-messages "$off_cmd" $file
-	if [ "$?" -ne "0" ] && [ $bt == "off" ]; then
-		echo "update $file to $off_cmd ..."
-
-		# append to file
-		cp --no-clobber --verbose $file $file.orig
-		cat >> $file <<-EOF
-
-			# disable bluetooth
-			$off_cmd
-		EOF
+		cp --verbose --force $data $file
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "$file already configured $off_cmd"
-	fi
-}
-
-#-------------------------------------------------------------------------------
-
-do_ssh()
-{
-	local ssh=$1
-
-	local file=$BOOT/ssh
-
-	if [ ! -f "$file" ] && [ $ssh == "on" ]; then
-		echo -e "Set $file to $ssh"
-
-		touch $file
-
-		config_count=$(( $config_count + 1 ))
-	else
-		echo "$file already configured"
-	fi
-}
-
-#-------------------------------------------------------------------------------
-
-do_wifi()
-{
-	local wpafile=$1
-
-	local file=$BOOT/wpa_supplicant.conf
-
-	if [ -f $wpafile ]; then
-		if [ ! -f $file ]; then
-			echo -e "copy $wpafile to $file ..."
-
-			cp --verbose --force $wpafile $file
-
-			config_count=$(( $config_count + 1 ))
-		else
-			echo "$file already configured"
-		fi
-	else
-		echo "\nWARNING: no $wpafile found wifi will not connect on boot\n"
+		echo "$file already exists"
 	fi
 }
 
@@ -333,38 +325,36 @@ set_keyboard()
 
 #-------------------------------------------------------------------------------
 
-get_tvservice()
+add_startup()
 {
-	local file=$ROOT/var/spool/cron/crontabs/root
+	local name=$1
+	local start=$2
+	local desc=$3
 
-	if [ -f $file ]; then
-		grep --no-messages "tvservice -off" $file
-		if [ $? -eq 0 ]; then
-			CUR_TVSERVICE="--off"
-			return
-		fi
-	fi
+	local service=/etc/systemd/system/${name}.service
+	local wants="multi-user.target"
+	local file=$ROOT/$service
 
-	CUR_TVSERVICE="--preferred"
-}
+	if [ ! -e $file ]; then
+		# create service file
+		cat <<-EOF > $file
+		[Unit]
+		Description=$desc
 
-set_tvservice()
-{
-	local state=$1
+		[Service]
+		ExecStart=$start
 
-	local file=$ROOT/var/spool/cron/crontabs/root
+		[Install]
+		WantedBy=$wants
+		EOF
 
-	get_tvservice
+		ln --symbolic --verbose $service $ROOT/etc/systemd/system/${wants}.wants
 
-	if [ "$state" != "$CUR_TVSERVICE" ]; then
-		echo "set $file tvservice to $state ..."
-
-		# append cmd
-		echo "@reboot tvservice $state" >> $file
+		echo "service $name $file $start ..."
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "$file already sets tvservice $state"
+		echo "service $file already exists"
 	fi
 }
 
@@ -415,13 +405,11 @@ dump_options()
 	get_locale
 	get_timezone
 	get_keyboard
-	get_tvservice
 
 	echo -e "NEWHOSTNAME=\"$CUR_HOSTNAME\""
 	echo -e "TIMEZONE=\"$CUR_TIMEZONE\""
 	echo -e "LOCALE=\"$CUR_LOCALE\""
 	echo -e "KEYBOARD=\"$XKBMODEL $XKBLAYOUT\""
-	echo -e "TVSERVICE=\"$CUR_TVSERVICE\""
 
 	exit
 }
@@ -491,14 +479,15 @@ fi
 
 # Config option defaults
 NEWHOSTNAME=raspberrypi
-GPUMEM=64
 SSH=on
-BLUETOOTH=on
 TIMEZONE=$(</etc/timezone)
 LOCALE="C.UTF-8"
 KEYBOARD="pc101 us"
-TVSERVICE="--off"
-PARTSIZE=""
+HDMI=""
+BLUETOOTH=""
+WIFIPOWERSAVE=""
+GPUMEM=""
+ROOTSIZE=""
 
 . $config_file
 
@@ -512,14 +501,16 @@ echo "Img file         : $img"
 echo "Img size         : $imgsize MiB"
 echo "Target           : $dev"
 echo "Boot mount       : $BOOT" 
-echo "Root mount       : $ROOT : $PARTSIZE"
+echo "Root mount       : $ROOT : $ROOTSIZE"
 echo "Hostname         : $NEWHOSTNAME"
 echo "Locale           : $LOCALE"
 echo "Timezone         : $TIMEZONE"
 echo "Keyboard Layout  : $KEYBOARD"
-echo "Bluetooth        : $BLUETOOTH"
 echo "SSH              : $SSH"
 echo "GPU Memory       : $GPUMEM"
+echo "WiFi Power Save  : $WIFIPOWERSAVE"
+echo "HDMI Output      : $HDMI"
+echo "Bluetooth        : $BLUETOOTH"
 echo
 show_avail_devices $dev
 
@@ -553,8 +544,8 @@ config_count=0
 echo -e "\nflashing $img (${imgsize} MiB) ..."
 dd if=$img status=progress of=$dev bs=1M
 
-if [ "$PARTSIZE" != "" ]; then
-	resize_rootfs $dev $PARTSIZE
+if [ "$ROOTSIZE" != "" ]; then
+	resize_rootfs $dev $ROOTSIZE
 fi
 
 echo -e "\npartitions:"
@@ -566,13 +557,20 @@ echo
 echo config...
 
 # config boot filesystem
-do_boot_config $GPUMEM
-do_ssh $SSH
-do_wifi $WPAFILE
-do_bluetooth $BLUETOOTH
-
-if [ "$PARTSIZE" != "" ]; then
-	do_disable_resize
+if [ "$SSH" = "on" ]; then
+	copy_boot_file /dev/null ssh
+fi
+if [ "$WPAFILE" != "" ]; then
+	copy_boot_file "$WPAFILE" "wpa_supplicant.conf"
+fi
+if [ "$GPUMEM" != "" ]; then
+	add_boot_config "gpu_mem=$GPUMEM"
+fi
+if [ $BLUETOOTH = "off" ]; then
+	add_boot_config "dtoverlay=pi3-disable-bt"
+fi
+if [ "$ROOTSIZE" != "" ]; then
+	del_boot_cmdline "init=[^=]*init_resize.sh"
 fi
 
 # config root filesystem
@@ -580,7 +578,12 @@ set_hostname $NEWHOSTNAME
 set_timezone $TIMEZONE
 set_locale $LOCALE
 set_keyboard $KEYBOARD
-set_tvservice $TVSERVICE
+if [ "$HDMI" = "off" ]; then
+	add_startup "disablehdmi" "/usr/bin/tvservice --off" "Disable HDMI with tvservice command"
+fi
+if [ "$WIFIPOWERSAVE" = "off" ]; then
+	add_startup "wifipowersave" "Disable WiFi power saving with iw command" "/sbin/iw dev wlan0 set power_save off"
+fi
 
 # copy over tools
 do_scripts $BOOT/tools
