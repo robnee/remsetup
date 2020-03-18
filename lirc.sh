@@ -19,24 +19,28 @@ do_packages()
 
 #-------------------------------------------------------------------------------
 
-do_boot_config()
+add_boot_config()
 {
-	local file=/boot/config.txt
+	local string=$1
+	local cmd=$(echo $string | cut -f1 -d',')
 
-	grep --no-messages "^dtoverlay=gpio-ir-tx" $file
+	local file=$BOOT/config.txt
+
+	grep --quiet --no-messages "^$cmd" $file
 	if [ "$?" -ne "0" ]; then
-		echo "update $file dtoverlay=gpio-ir-tx ..."
+		echo "update $file to $string ..."
 
-		cp -f $file $file.orig
+		# append to file
+		cp --no-clobber $file $file.orig
 		cat >> $file <<-EOF
 
-			# IR Remote Settings
-			dtoverlay=gpio-ir-tx,gpio_pin=$1
+			# set by lirc.sh
+			$string
 		EOF
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "$file already configured"
+		echo "$file already configured $string"
 	fi
 }
 
@@ -228,7 +232,7 @@ echo
 
 config_count=0
 
-do_boot_config $LIRCPIN
+add_boot_config "dtoverlay=gpio-ir-tx,gpio_pin=$LIRCPIN"
 do_lirc_options $LIRCPORT
 do_lircd_conf
 do_packages

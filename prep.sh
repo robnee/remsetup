@@ -159,34 +159,35 @@ del_boot_cmdline()
 
 add_boot_config()
 {
-	local param=$1
+	local string=$1
+	local cmd=$(echo $string | cut -f1 -d',')
 
 	local file=$BOOT/config.txt
 
-	grep --quiet --no-messages "$param" $file
+	grep --quiet --no-messages "^$cmd" $file
 	if [ "$?" -ne "0" ]; then
-		echo "update $file to $param ..."
+		echo "update $file to $string ..."
 
 		# append to file
 		cp --no-clobber $file $file.orig
 		cat >> $file <<-EOF
 
 			# set by prep.sh
-			$param
+			$string
 		EOF
 
 		config_count=$(( $config_count + 1 ))
 	else
-		echo "$file already configured $param"
+		echo "$file already configured $string"
 	fi
 }
 
 #-------------------------------------------------------------------------------
 
-copy_boot_file()
+copy_file()
 {
 	local data=$1
-	local file=$BOOT/$2
+	local file=$2
 
 	if [ ! -e "$file" ]; then
 		echo -e "create $file ..."
@@ -569,10 +570,10 @@ echo config...
 
 # config boot filesystem
 if [ "$SSH" = "on" ]; then
-	copy_boot_file /dev/null ssh
+	copy_file /dev/null "$BOOT/ssh"
 fi
 if [ "$WPAFILE" != "" ]; then
-	copy_boot_file "$WPAFILE" "wpa_supplicant.conf"
+	copy_file "$WPAFILE" "$BOOT/wpa_supplicant.conf"
 fi
 if [ "$GPUMEM" != "" ]; then
 	add_boot_config "gpu_mem=$GPUMEM"
