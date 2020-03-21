@@ -13,6 +13,8 @@ do_packages()
 	echo
 	echo "package install update and install ..."
 
+	local last_install1=$(grep "status installed" /var/log/dpkg.log | tail -1)
+
 	apt --yes update --allow-releaseinfo-change
 	apt --yes update
 	apt --yes upgrade
@@ -23,6 +25,12 @@ do_packages()
 	# apt --yes install powertop cpufrequtils
 
 	pip3 install virtualenv
+
+	local last_install2=$(grep "status installed" /var/log/dpkg.log | tail -1)
+
+	if [ "$last_install1" != "$last_install2" ]; then
+		config_count=$(( $config_count + 1 ))
+	fi	
 }
 
 #-------------------------------------------------------------------------------
@@ -46,14 +54,12 @@ echo "System        : $UNAME"
 echo "Release       : $NAME $VERSION"
 echo
 
-last_install_start=$(grep "status installed" /var/log/dpkg.log | tail -1)
+config_count=0
 
 # prep.sh and lirc.sh do all the rest
 do_packages
 
-last_install_end=$(grep "status installed" /var/log/dpkg.log | tail -1)
-
-if [ "$last_install_start" != "$last_install_end" ]; then
+if [ $config_count -gt 0 ]; then
 	echo
 	echo packages were install so rebooting in 10 seconds ...
 	sleep 10
@@ -64,4 +70,6 @@ fi
 # changes are in the pre-boot stuff and skip the reboot landing us here.
 
 echo
-echo "no changes, done"
+echo "made $config_count config changes"
+echo
+echo "done"

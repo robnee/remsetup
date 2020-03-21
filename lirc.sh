@@ -13,8 +13,16 @@ do_packages()
 	echo
 	echo "package install update and install ..."
 
+	local last_install1=$(grep "status installed" /var/log/dpkg.log | tail -1)
+
 	apt --yes update
 	apt --yes install lirc lirc-doc
+
+	local last_install2=$(grep "status installed" /var/log/dpkg.log | tail -1)
+
+	if [ "$last_install1" != "$last_install2" ]; then
+		config_count=$(( $config_count + 1 ))
+	fi	
 }
 
 #-------------------------------------------------------------------------------
