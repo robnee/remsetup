@@ -54,6 +54,7 @@ flash_image()
 	fi
 
 	# Reread the partition table
+	sleep 1
 	partprobe $dev
 }
 
@@ -111,6 +112,8 @@ mount_partitions()
 	mkdir $verbose $boot
 	mkdir $verbose $root
 
+	echo -e "mounting volumes ..."
+
 	# loop over partitions and mount as appropriate
 	lsblk --noheadings --output LABEL,PATH ${dev} | while read line
 	do
@@ -156,7 +159,7 @@ add_cmdline()
 			fi
 		done
 
-		cp $verbose --no-clobber -$file $file.orig
+		if [ $backup ]; then cp $verbose --no-clobber $file $file.orig; fi
 		echo $cmdline > $file
 
 		config_count=$(( $config_count + 1 ))
@@ -177,7 +180,7 @@ del_cmdline()
 	if [ $? -eq 0 ]; then
 		echo -e "update $file to remove $match ..."
 
-		cp $verbose --no-clobber $file $file.orig
+		if [ $backup ]; then cp $verbose --no-clobber $file $file.orig; fi
 		sed --in-place=.orig s/$pattern// $file
 
 		config_count=$(( $config_count + 1 ))
@@ -200,7 +203,7 @@ add_config()
 		echo "update $file to $string ..."
 
 		# append to file
-		cp $verbose --no-clobber $file $file.orig
+		if [ $backup ]; then cp $verbose --no-clobber $file $file.orig; fi
 		cat >> $file <<-EOF
 
 			# set by prep.sh
@@ -253,7 +256,7 @@ set_timezone()
 	if [ "$tz" != "$CUR_TIMEZONE" ]; then
 		echo "Set $file from $CUR_TIMEZONE to $tz ..."
 
-		cp $verbose --no-clobber $file $file.orig
+		if [ $backup ]; then cp $verbose --no-clobber $file $file.orig; fi
 		echo $tz > $file
 
 		mv $verbose --no-clobber $root/etc/localtime $root/etc/localtime.orig
@@ -289,7 +292,7 @@ set_hostname()
 	if [ "$new_hostname" != "$CUR_HOSTNAME" ]; then
 		echo "Set hostname from $CUR_HOSTNAME to $new_hostname ..."
 
-		cp $verbose --no-clobber $file $file.orig
+		if [ $backup ]; then cp $verbose --no-clobber $file $file.orig; fi
 		echo $new_hostname > $file
 
 		sed --in-place=.orig s/$CUR_HOSTNAME/$new_hostname/g $hosts
@@ -322,7 +325,7 @@ set_locale()
 	if [ "$locale" != "$CUR_LOCALE" ]; then
 		echo "Set $file from $CUR_LOCALE to $locale ..."
 
-		cp $verbose --no-clobber $file $file.orig
+		if [ $backup ]; then cp $verbose --no-clobber $file $file.orig; fi
 		echo LANG=$locale > $file
 
 		config_count=$(( $config_count + 1 ))
@@ -355,7 +358,7 @@ set_keyboard()
 	if [ "$model" != "$XKBMODEL" ] || [ "$layout" != "$XKBLAYOUT" ] || [ "$options" != "$XKBOPTIONS" ]; then
 		echo "set $file from $XKBMODEL $XKBLAYOUT to $model $layout $options ..."
 
-		cp $verbose --no-clobber $file $file.orig
+		if [ $backup ]; then cp $verbose --no-clobber $file $file.orig; fi
 		cat <<-EOF > $file
 		# IR Remote Settings
 		XKBMODEL="$model"
@@ -421,7 +424,7 @@ do_scripts()
 
 		# copy over config tools
 		mkdir $verbose $file
-		cp $verbose README.md config.sh prep.sh lirc.sh $file
+		cp $verbose README.md packages.sh prep.sh lirc.sh $file
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -446,6 +449,9 @@ do_config()
 	fi
 	if [ "$WPAFILE" != "" ]; then
 		copy_file "$WPAFILE" "$boot/wpa_supplicant.conf"
+	fi
+	if [ "$CAMERA" = "on" ]; then
+		add_config "$boot/config.txt" "start_x=1"
 	fi
 	if [ "$GPUMEM" != "" ]; then
 		add_config "$boot/config.txt" "gpu_mem=$GPUMEM"
@@ -531,6 +537,7 @@ usage()
 	echo "    -c <config file> : config file (default: ./vars)"
 	echo "    -b <boot dir>    : location of boot dir or mount point"
 	echo "    -r <root dir>    : location of root dir or mount point"
+	echo "    -x               : do not make backups of changed files"
 	echo "    -s               : show target config in config file format"
 	echo "    -f               : force/suppress all prompts"
 	echo "    -v               : verbose output"
@@ -549,15 +556,17 @@ config_file=./vars
 boot="/tmp/boot"
 root="/tmp/root"
 image_file=""
+dev=""
 verbose=""
 force=0
+backup="Y"
 
 if [ "$#" -eq 0 ]; then
 	usage
 fi
 
 # check for options
-while getopts "hvsfi:c:b:r:" opt; do
+while getopts "hvsfxi:c:b:r:" opt; do
 	case "$opt" in
 	h|\?)
 		usage
@@ -571,6 +580,8 @@ while getopts "hvsfi:c:b:r:" opt; do
 	b)	boot=$OPTARG
 		;;
 	r)	root=$OPTARG
+		;;
+	x)	backup=""
 		;;
 	f)	force=1
 		;;
@@ -595,6 +606,7 @@ fi
 WPAFILE="./wpa_supplicant.conf"
 NEWHOSTNAME="raspberrypi"
 SSH=on
+CAMERA=""
 TIMEZONE=$(</etc/timezone)
 LOCALE="C.UTF-8"
 KEYMODEL="pc101"
@@ -611,6 +623,11 @@ if [ -f $config_file ]; then
 else
 	echo "$config_file does not exist"
 	exit 1
+fi
+
+# Rules
+if [ "$CAMERA" = "on" ] && [ ${GPUMEM:-0} -lt 128 ]; then
+	GPUMEM=128
 fi
 
 echo "--------------------------------------------------------------------------------"
@@ -630,7 +647,9 @@ echo "SSH              : $SSH"
 echo "GPU Memory       : $GPUMEM"
 echo "WiFi Power Save  : $WIFIPOWERSAVE"
 echo "HDMI Output      : $HDMI"
+echo "Camera           : $CAMERA"
 echo "Bluetooth        : $BLUETOOTH"
+echo "Backups          : $backup"
 echo
 
 if [ "$dev" != "" ]; then
@@ -639,16 +658,6 @@ if [ "$dev" != "" ]; then
 	if [ $? -ne 0 ]; then
 		echo "$dev does not appear to be a valid block device"
 		exit 1
-	fi
-
-	# ask for confirmation if device has partitions
-	partx $dev > /dev/null 2>&1
-	if [ $force -eq 0 ] && [ $? -eq 0 ]; then
-		echo -n -e "\n$dev appears to contain partitions, OK to overwrite? "
-		read response
-		if [ "${response^^}" != "Y" ]; then
-			exit 0
-		fi
 	fi
 
 	# Make sure dev is a disk and not one of its partitions/devices
@@ -666,6 +675,16 @@ if [ "$dev" != "" ]; then
 
 	# Flash an image to device if requested
 	if [ "$image_file" != "" ]; then
+		# ask for confirmation if device has partitions
+		partx $dev > /dev/null 2>&1
+		if [ $force -eq 0 ] && [ $? -eq 0 ]; then
+			echo -n -e "\n$dev appears to contain partitions, OK to overwrite? "
+			read response
+			if [ "${response^^}" != "Y" ]; then
+				exit 0
+			fi
+		fi
+
 		if [ ! -f "$image_file" ]; then
 			echo "$image_file does not exist"
 			exit 1
