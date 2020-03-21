@@ -8,8 +8,17 @@
 
 set -u
 
+# create a timestamp file for use with find -newer
 STARTTIME=/tmp/start_time
 touch $STARTTIME
+trap cleanup EXIT
+
+#-------------------------------------------------------------------------------
+
+cleanup()
+{
+	rm --force $STARTTIME
+}
 
 #-------------------------------------------------------------------------------
 
@@ -40,6 +49,12 @@ flash_image()
 
 	echo -e "\nflashing $img (${size} MiB) ..."
 	dd if=$img of=$dev status=progress bs=1M
+	if [ $? -ne "0" ]; then
+		exit 1
+	fi
+
+	# Reread the partition table
+	partprobe $dev
 }
 
 #-------------------------------------------------------------------------------
@@ -51,8 +66,6 @@ resize_rootfs()
 
 	local found=0
 
-	# reread partition table
-	# partprobe ${dev}${part_num}
 	# loop over partitions and look for rootfs
 	lsblk --noheadings --output LABEL,PATH ${dev} | while read line
 	do
@@ -66,7 +79,9 @@ resize_rootfs()
 			local partnum=${partname: -1}
 			parted $dev resizepart $partnum $size
 
-			e2fsck -f $partname
+			# we need to convert --verbose to -v
+			local v=${verbose: 1:2}
+			e2fsck $v -f $partname
 			resize2fs $partname
 
 			found=1
@@ -93,8 +108,8 @@ mount_partitions()
 		exit 1
 	fi
 
-	mkdir --verbose $boot
-	mkdir --verbose $root
+	mkdir $verbose $boot
+	mkdir $verbose $root
 
 	# loop over partitions and mount as appropriate
 	lsblk --noheadings --output LABEL,PATH ${dev} | while read line
@@ -103,9 +118,9 @@ mount_partitions()
 		local partname=$(echo $line | xargs | cut -f2 -d' ')
 
 		if [ "$label" = "boot" ]; then
-			mount --verbose --types vfat $partname $boot --options rw,umask=0000
+			mount $verbose --types vfat $partname $boot --options rw,umask=0000
 		elif [ "$label" = "rootfs" ]; then
-			mount --verbose $partname $root --options rw
+			mount $verbose $partname $root --options rw
 		fi
 	done
 }
@@ -141,7 +156,7 @@ add_cmdline()
 			fi
 		done
 
-		cp --no-clobber -$file $file.orig
+		cp $verbose --no-clobber -$file $file.orig
 		echo $cmdline > $file
 
 		config_count=$(( $config_count + 1 ))
@@ -162,7 +177,7 @@ del_cmdline()
 	if [ $? -eq 0 ]; then
 		echo -e "update $file to remove $match ..."
 
-		cp --no-clobber $file $file.orig
+		cp $verbose --no-clobber $file $file.orig
 		sed --in-place=.orig s/$pattern// $file
 
 		config_count=$(( $config_count + 1 ))
@@ -185,7 +200,7 @@ add_config()
 		echo "update $file to $string ..."
 
 		# append to file
-		cp --no-clobber $file $file.orig
+		cp $verbose --no-clobber $file $file.orig
 		cat >> $file <<-EOF
 
 			# set by prep.sh
@@ -208,7 +223,7 @@ copy_file()
 	if [ ! -e "$file" ]; then
 		echo -e "create $file ..."
 
-		cp --verbose --force $data $file
+		cp $verbose --force $data $file
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -238,12 +253,12 @@ set_timezone()
 	if [ "$tz" != "$CUR_TIMEZONE" ]; then
 		echo "Set $file from $CUR_TIMEZONE to $tz ..."
 
-		cp --no-clobber $file $file.orig
+		cp $verbose --no-clobber $file $file.orig
 		echo $tz > $file
 
-		mv --no-clobber --verbose $root/etc/localtime $root/etc/localtime.orig
-		rm --force --verbose $root/etc/localtime
-		ln --symbolic --verbose /usr/share/zoneinfo/$tz $root/etc/localtime
+		mv $verbose --no-clobber $root/etc/localtime $root/etc/localtime.orig
+		rm $verbose --force $root/etc/localtime
+		ln $verbose --symbolic /usr/share/zoneinfo/$tz $root/etc/localtime
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -274,7 +289,7 @@ set_hostname()
 	if [ "$new_hostname" != "$CUR_HOSTNAME" ]; then
 		echo "Set hostname from $CUR_HOSTNAME to $new_hostname ..."
 
-		cp --no-clobber $file $file.orig
+		cp $verbose --no-clobber $file $file.orig
 		echo $new_hostname > $file
 
 		sed --in-place=.orig s/$CUR_HOSTNAME/$new_hostname/g $hosts
@@ -307,7 +322,7 @@ set_locale()
 	if [ "$locale" != "$CUR_LOCALE" ]; then
 		echo "Set $file from $CUR_LOCALE to $locale ..."
 
-		cp --no-clobber $file $file.orig
+		cp $verbose --no-clobber $file $file.orig
 		echo LANG=$locale > $file
 
 		config_count=$(( $config_count + 1 ))
@@ -340,7 +355,7 @@ set_keyboard()
 	if [ "$model" != "$XKBMODEL" ] || [ "$layout" != "$XKBLAYOUT" ] || [ "$options" != "$XKBOPTIONS" ]; then
 		echo "set $file from $XKBMODEL $XKBLAYOUT to $model $layout $options ..."
 
-		cp --no-clobber $file $file.orig
+		cp $verbose --no-clobber $file $file.orig
 		cat <<-EOF > $file
 		# IR Remote Settings
 		XKBMODEL="$model"
@@ -359,7 +374,7 @@ set_keyboard()
 
 #-------------------------------------------------------------------------------
 
-add_startup()
+add_service()
 {
 	local root=$1
 	local name=$2
@@ -385,9 +400,9 @@ add_startup()
 		WantedBy=$wants
 		EOF
 
-		ln --symbolic --verbose $service $root/etc/systemd/system/${wants}.wants
+		ln $verbose --symbolic $service $root/etc/systemd/system/${wants}.wants
 
-		echo "service $name $file ..."
+		echo "add service $name $file ..."
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -405,8 +420,8 @@ do_scripts()
 		echo -e "copy scripts to $file ..."
 
 		# copy over config tools
-		mkdir --verbose $file
-		cp README.md config.sh prep.sh lirc.sh $file
+		mkdir $verbose $file
+		cp $verbose README.md config.sh prep.sh lirc.sh $file
 
 		config_count=$(( $config_count + 1 ))
 	else
@@ -416,9 +431,55 @@ do_scripts()
 
 #-------------------------------------------------------------------------------
 
+do_config()
+{
+	local boot=$1
+	local root=$2
+
+	config_count=0
+
+	echo
+	echo config boot ...
+
+	if [ "$SSH" = "on" ]; then
+		copy_file /dev/null "$boot/ssh"
+	fi
+	if [ "$WPAFILE" != "" ]; then
+		copy_file "$WPAFILE" "$boot/wpa_supplicant.conf"
+	fi
+	if [ "$GPUMEM" != "" ]; then
+		add_config "$boot/config.txt" "gpu_mem=$GPUMEM"
+	fi
+	if [ $BLUETOOTH = "off" ]; then
+		add_config "$boot/config.txt" "dtoverlay=pi3-disable-bt"
+	fi
+	if [ "$ROOTSIZE" != "" ]; then
+		del_cmdline "$boot/cmdline.txt" "init=[^=]*init_resize.sh"
+	fi
+
+	do_scripts $boot/tools
+
+	echo
+	echo config root ...
+
+	set_hostname $root $NEWHOSTNAME
+	set_timezone $root $TIMEZONE
+	set_locale $root $LOCALE
+	set_keyboard "$root" "$KEYMODEL" "$KEYLAYOUT" "$KEYOPTIONS"
+
+	if [ "$HDMI" = "off" ]; then
+		add_service $root "disablehdmi" "Disable HDMI output" "/usr/bin/tvservice --off"
+	fi
+	if [ "$WIFIPOWERSAVE" = "off" ]; then
+		add_service $root "wifipowersave" "Disable WiFi power saving" "/sbin/iw dev wlan0 set power_save off;/sbin/iw dev wlan0 get power_save"
+	fi
+}
+
+#-------------------------------------------------------------------------------
+
 clear_keys()
 {
-	host=$1
+	local host=$1
 
 	# make the local machine forget past versions
 	echo -e "\nclean local keys for $host"
@@ -434,9 +495,14 @@ clear_keys()
 
 #-------------------------------------------------------------------------------
 
-dump_options()
+show_options()
 {
-	root=$1
+	local root=$1
+
+	if [ ! -e "$root" ]; then
+		echo "$root does not exist"
+		exit 1
+	fi
 
 	get_hostname $root 
 	get_locale $root
@@ -458,33 +524,57 @@ dump_options()
 usage()
 {
 	echo
-	echo "usage: prep.sh [ -d <root> ] [ -f <raspbian img file> ] <block device to write image to>"
+	echo "usage: prep.sh [ options ] [ <target block device> ]"
 	echo
-	show_avail_devices ""
+	echo "options:"
+	echo "    -i <img file>    : Raspbian image file to flash ro target"
+	echo "    -c <config file> : config file (default: ./vars)"
+	echo "    -b <boot dir>    : location of boot dir or mount point"
+	echo "    -r <root dir>    : location of root dir or mount point"
+	echo "    -s               : show target config in config file format"
+	echo "    -f               : force/suppress all prompts"
+	echo "    -v               : verbose output"
+	echo "    -h               : help"
+	echo
+
+	lsblk --output NAME,MODEL,TYPE,FSTYPE,RM,SIZE,TRAN,LABEL,MOUNTPOINT
 	exit 1
 }
 
 #-------------------------------------------------------------------------------
 # main
 
-# option defaults
-verbose=0
+# command line option defaults
 config_file=./vars
+boot="/tmp/boot"
+root="/tmp/root"
 image_file=""
+verbose=""
+force=0
+
+if [ "$#" -eq 0 ]; then
+	usage
+fi
 
 # check for options
-while getopts "hvf:d:c:" opt; do
+while getopts "hvsfi:c:b:r:" opt; do
 	case "$opt" in
 	h|\?)
 		usage
 		;;
-	v)  verbose=1
+	v)  verbose="--verbose"
 		;;
-	f)	image_file=$OPTARG
-		;;
-	d)  dump_options $OPTARG
+	i)	image_file=$OPTARG
 		;;
 	c)	confile_file=$OPTARG
+		;;
+	b)	boot=$OPTARG
+		;;
+	r)	root=$OPTARG
+		;;
+	f)	force=1
+		;;
+	s)  show_options $boot
 		;;
 	esac
 done
@@ -492,25 +582,16 @@ done
 # shift so that $@, $1, etc. refer to the non-option arguments
 shift "$((OPTIND-1))"
 
-if [ "$#" -ne 1 ]; then
-	usage
+if [ "$#" -gt 0 ]; then
+	dev=$1
 fi
-
-dev=$1
 
 if [ `id -u` -ne "0" ]; then
 	echo "must run as root"
 	exit 1
 fi
 
-if [ "$image_file" != "" ] && [ ! -f "$image_file" ]; then
-	echo "$image_file does not exist"
-	exit 1
-fi
-
 # Config option defaults
-BOOT="/tmp/boot"
-ROOT="/tmp/root"
 WPAFILE="./wpa_supplicant.conf"
 NEWHOSTNAME="raspberrypi"
 SSH=on
@@ -535,10 +616,11 @@ fi
 echo "--------------------------------------------------------------------------------"
 echo "Setup workspace"
 echo "--------------------------------------------------------------------------------"
+echo "Config file      : $config_file"
 echo "Image file       : $image_file"
 echo "Target           : $dev"
-echo "Boot mount       : $BOOT" 
-echo "Root mount       : $ROOT : $ROOTSIZE"
+echo "Boot mount       : $boot" 
+echo "Root mount       : $root : $ROOTSIZE"
 echo "Hostname         : $NEWHOSTNAME"
 echo "Locale           : $LOCALE"
 echo "Timezone         : $TIMEZONE"
@@ -551,97 +633,87 @@ echo "HDMI Output      : $HDMI"
 echo "Bluetooth        : $BLUETOOTH"
 echo
 
-if [ ! -e "$dev" ]; then
-	echo "$dev does not exist"
+if [ "$dev" != "" ]; then
+	# make sure the block device looks valid
+	lsblk --output NAME,MODEL,TYPE,FSTYPE,RM,SIZE,TRAN,LABEL,MOUNTPOINT $dev
+	if [ $? -ne 0 ]; then
+		echo "$dev does not appear to be a valid block device"
+		exit 1
+	fi
+
+	# ask for confirmation if device has partitions
+	partx $dev > /dev/null 2>&1
+	if [ $force -eq 0 ] && [ $? -eq 0 ]; then
+		echo -n -e "\n$dev appears to contain partitions, OK to overwrite? "
+		read response
+		if [ "${response^^}" != "Y" ]; then
+			exit 0
+		fi
+	fi
+
+	# Make sure dev is a disk and not one of its partitions/devices
+	disk=`basename $dev`
+	if [ ! -e /sys/block/$disk ]; then
+		echo -e "\n$dev does not appear to be a (whole) disk"
+		exit 1
+	fi
+
+	# Ensure dev not already mounted
+	if [ `grep --count $dev /proc/mounts` -gt 0 ]; then
+		echo -e "\n$dev is already mounted"
+		exit 1
+	fi
+
+	# Flash an image to device if requested
+	if [ "$image_file" != "" ]; then
+		if [ ! -f "$image_file" ]; then
+			echo "$image_file does not exist"
+			exit 1
+		fi
+
+		flash_image $image_file $dev
+
+		# Resize rootfs if requested
+		if [ "$ROOTSIZE" != "" ]; then
+			resize_rootfs $dev $ROOTSIZE 
+		fi
+	fi
+
+	# Display partition info
+	if [ "$verbose" != "" ]; then
+		echo -e "\npartitions:"
+		parted $dev print free
+	fi
+
+	# Mount partitions
+	mount_partitions $dev $boot $root
+
+	do_config $boot $root
+	show_changes $boot $STARTTIME
+	show_changes $root $STARTTIME
+
+	# Unmount and cleanup
+	echo
+	umount $verbose $boot
+	umount $verbose $root
+	rm $verbose --recursive --force $boot $root
+
+elif [ "$boot" != "" ] && [ "$root" != "" ]; then
+	# make sure the target directories are available
+	if [ ! -e $boot ] || [ ! -e $root ]; then
+		echo -e "\n$boot and/or $root does not exist"
+		exit 1
+	fi
+
+	do_config $boot $root
+	show_changes $boot $STARTTIME
+	show_changes $root $STARTTIME
+
+else
+	echo no target specified
 	exit 1
 fi
-
-lsblk --output NAME,MODEL,TYPE,FSTYPE,RM,SIZE,TRAN,LABEL,MOUNTPOINT $dev
-if [ $? -ne 0 ]; then
-	echo could not scan $dev
-	exit 1
-fi
-
-# Make sure dev is a disk and not one of it's partitions/devices
-disk=`basename $dev`
-if [ ! -e /sys/block/$disk ]; then
-	echo -e "\n$dev does not appear to be a (whole) disk"
-	exit 1
-fi
-
-# Ensure dev not already mounted
-if [ `grep --count $dev /proc/mounts` -gt 0 ]; then
-	echo -e "\n$dev is already mounted"
-	exit 1
-fi
-
-# Flash an image to device if requested
-if [ "$image_file" != "" ]; then
-	flash_image $image_file $dev
-fi
-
-# Reread the partition table
-partprobe $dev
-
-# Resize rootfs if requested
-if [ "$ROOTSIZE" != "" ]; then
-	resize_rootfs $dev $ROOTSIZE 
-fi
-
-# Display partition info
-echo -e "\npartitions:"
-parted $dev print free
-
-mount_partitions $dev $BOOT $ROOT
-
-echo
-echo config...
-	
-config_count=0
-
-# config boot filesystem
-if [ "$SSH" = "on" ]; then
-	copy_file /dev/null "$BOOT/ssh"
-fi
-if [ "$WPAFILE" != "" ]; then
-	copy_file "$WPAFILE" "$BOOT/wpa_supplicant.conf"
-fi
-if [ "$GPUMEM" != "" ]; then
-	add_config "$BOOT/config.txt" "gpu_mem=$GPUMEM"
-fi
-if [ $BLUETOOTH = "off" ]; then
-	add_config "$BOOT/config.txt" "dtoverlay=pi3-disable-bt"
-fi
-if [ "$ROOTSIZE" != "" ]; then
-	del_cmdline "$BOOT/cmdline.txt" "init=[^=]*init_resize.sh"
-fi
-
-# config root filesystem
-set_hostname $ROOT $NEWHOSTNAME
-set_timezone $ROOT $TIMEZONE
-set_locale $ROOT $LOCALE
-set_keyboard "$ROOT" "$KEYMODEL" "$KEYLAYOUT" "$KEYOPTIONS"
-if [ "$HDMI" = "off" ]; then
-	add_startup $ROOT "disablehdmi" "Disable HDMI output" "/usr/bin/tvservice --off"
-fi
-if [ "$WIFIPOWERSAVE" = "off" ]; then
-	add_startup $ROOT "wifipowersave" "Disable WiFi power saving" "/sbin/iw dev wlan0 set power_save off;/sbin/iw dev wlan0 get power_save"
-fi
-
-# copy over tools
-do_scripts $BOOT/tools
-
-# Show changed files
-show_changes $BOOT $STARTTIME
-show_changes $ROOT $STARTTIME
-
-echo
-umount --verbose $BOOT
-umount --verbose $ROOT
-rm --recursive --force --verbose $BOOT $ROOT
 
 clear_keys $NEWHOSTNAME
-
-rm --force $STARTTIME
 
 echo -e "\ndone"
