@@ -3,7 +3,7 @@
 # last delta : $LastChangedDate$
 # rev        : $Rev$
 #
-# config the system.  This file is meant to be copied to the target system (maybe
+# Install packages.  This file is meant to be copied to the target system (maybe
 # via the boot partition) to run on first boot
 
 #-------------------------------------------------------------------------------
@@ -46,17 +46,16 @@ echo "System        : $UNAME"
 echo "Release       : $NAME $VERSION"
 echo
 
-config_count=0
+last_install_start=$(grep "status installed" /var/log/dpkg.log | tail -1)
 
 # prep.sh and lirc.sh do all the rest
 do_packages
 
-echo
-echo "made $config_count config changes"
+last_install_end=$(grep "status installed" /var/log/dpkg.log | tail -1)
 
-# See if we did anything and should reboot
-if [ $config_count -gt 0 ]; then
-	echo rebooting in 10 seconds ...
+if [ "$last_install_start" != "$last_install_end" ]; then
+	echo
+	echo packages were install so rebooting in 10 seconds ...
 	sleep 10
 	reboot
 fi
@@ -65,6 +64,4 @@ fi
 # changes are in the pre-boot stuff and skip the reboot landing us here.
 
 echo
-echo "made $config_count config changes"
-echo
-echo "done"
+echo "no changes, done"
