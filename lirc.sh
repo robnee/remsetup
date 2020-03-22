@@ -32,7 +32,7 @@ add_boot_config()
 	local string=$1
 	local cmd=$(echo $string | cut -f1 -d',')
 
-	local file=$BOOT/config.txt
+	local file=/boot/config.txt
 
 	grep --quiet --no-messages "^$cmd" $file
 	if [ "$?" -ne "0" ]; then
@@ -58,7 +58,7 @@ do_lirc_options()
 {
 	local file=/etc/lirc/lirc_options.conf
 
-	grep --no-messages "lirc0" $file
+	grep --quiet --no-messages "lirc0" $file
 	if [ "$?" -ne "0" ]; then
 		echo "create $file port $1 ..."
 
