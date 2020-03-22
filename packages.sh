@@ -19,11 +19,30 @@ do_packages()
 	apt --yes update
 	apt --yes upgrade
 
-	apt --yes install git vim python3-pip
+	apt --yes install git vim
 	apt --yes autoremove
 	# optional
 	# apt --yes install powertop cpufrequtils
 
+	local last_install2=$(grep "status installed" /var/log/dpkg.log | tail -1)
+
+	if [ "$last_install1" != "$last_install2" ]; then
+		config_count=$(( $config_count + 1 ))
+	fi	
+}
+
+#-------------------------------------------------------------------------------
+
+do_python()
+{
+	echo
+	echo "install and update python install ..."
+
+	local last_install1=$(grep "status installed" /var/log/dpkg.log | tail -1)
+
+	apt --yes install python3-setuptools
+	curl https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+	python3 /tmp/get-pip.py
 	pip3 install virtualenv
 
 	local last_install2=$(grep "status installed" /var/log/dpkg.log | tail -1)
@@ -66,8 +85,14 @@ if [ $config_count -gt 0 ]; then
 	reboot
 fi
 
-# After first reboot.  If you rerun the script after boot it should detect zero
-# changes are in the pre-boot stuff and skip the reboot landing us here.
+do_python
+
+if [ $config_count -gt 0 ]; then
+	echo
+	echo packages were install so rebooting in 10 seconds ...
+	sleep 10
+	reboot
+fi
 
 echo
 echo "made $config_count config changes"
