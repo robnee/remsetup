@@ -114,8 +114,10 @@ mount_partitions()
 
 	echo -e "mounting volumes ..."
 
+	partprobe $dev
+
 	# loop over partitions and mount as appropriate
-	lsblk --noheadings --output LABEL,PATH ${dev} | while read line
+	lsblk --noheadings --output LABEL,PATH $dev | while read line
 	do
 		local label=$(echo $line | xargs | cut -f1 -d' ')
 		local partname=$(echo $line | xargs | cut -f2 -d' ')
@@ -456,7 +458,7 @@ do_config()
 	if [ "$GPUMEM" != "" ]; then
 		add_config "$boot/config.txt" "gpu_mem=$GPUMEM"
 	fi
-	if [ $BLUETOOTH = "off" ]; then
+	if [ "$BLUETOOTH" = "off" ]; then
 		add_config "$boot/config.txt" "dtoverlay=pi3-disable-bt"
 	fi
 	if [ "$ROOTSIZE" != "" ]; then
@@ -575,7 +577,7 @@ while getopts "hvsfxi:c:b:r:" opt; do
 		;;
 	i)	image_file=$OPTARG
 		;;
-	c)	confile_file=$OPTARG
+	c)	config_file=$OPTARG
 		;;
 	b)	boot=$OPTARG
 		;;
